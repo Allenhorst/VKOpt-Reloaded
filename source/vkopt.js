@@ -1,21 +1,26 @@
-﻿// ==UserScript==
-// @name          VKOpt 3.x
-// @author        KiberInfinity( /id13391307 )
-// @namespace     http://vkopt.net/
-// @description   Vkontakte Optimizer 3.x
-// @include       *vkontakte.ru*
-// @include       *vk.com*
-// ==/UserScript==
-//
-// (c) All Rights Reserved. VkOpt.
-//
+﻿//////////////////////////////////////////////////
+///////////////////  vkopt.js  ///////////////////
+//////////////////////////////////////////////////
+//  VKOpt Reloaded (Vkontakte Optimizer)        //
+//  Developer: xiadosw [id115860632]            //
+//  (c) All Rights Reserved. VKOpt Reloaded.    //
+//////////////////////////////////////////////////
+
 /* VERSION INFO */
-var vVersion = 307;
-var vBuild = 181220;
-var vVersionRev = 2;
+var vVersion = 312;
+var vBuild = 220425;
+var vVersionRev = 1;
 var vPostfix = '';
 
 if (!window.vkopt) window.vkopt={};
+vkopt.versions = vkopt.versions || [];
+vkopt.versions.push({
+   version: vVersion,
+   build: vBuild,
+   rev: vVersionRev,
+   postfix: vPostfix,
+   base: window._vkopt_loader_browser
+})
 
 var vkopt_defaults = {
    config: {
@@ -31,7 +36,6 @@ var vkopt_defaults = {
       audio_size_info: false,
       audio_clean_titles: false,
       audio_album_info: true,
-      //size_info_on_ctrl: true,
       scrobbler: true,
       im_dialogs_right: false,
       dont_cut_bracket: false,
@@ -43,6 +47,9 @@ var vkopt_defaults = {
       old_unread_msg_bg: 'c5d9e7',
       im_recent_emoji: false,
       ru_vk_logo: false,
+      rn_label_groups: false,
+      rn_label_im: false,
+      old_icon_verify: false,
       //hide_big_like: false,
       hide_left_set: false,
       hide_recommendations: false,
@@ -53,7 +60,6 @@ var vkopt_defaults = {
       common_group_color: '90ee90',
       dislikes_enabled: false,
       dislike_icon_index: 1,
-      reverse_comments: false,
 
       //disabled:
       im_store_h: false,
@@ -91,7 +97,8 @@ var vkopt_defaults = {
       MAX_CACHE_AUDIO_SIZE_ITEMS: 10000 // максимальное количество запомненных размеров аудио в локальном хранилище
    },
    popular: [
-      'dislikes_enabled',
+      'hold_menu',
+      //'dislikes_enabled',
       'scroll_to_next',
       'pv_comm_move_down',
       'disable_border_radius'
@@ -130,7 +137,7 @@ var vkopt_core = {
    dom_ready: function(fn, ctx){
       var ready, timer;
       var onChange = function (e) {
-         if (!window.IDL || !window.VK_LANGS) return; // Ждём vk_lib.js и vklang.js
+         if ((typeof IDL == "undefined") || (typeof VK_LANGS == "undefined")) return; // Ждём vk_lib.js и vklang.js
          if (document.getElementById('footer') || document.getElementById('footer_wrap')) {
             fireDOMReady();
          } else if (e && e.type == "DOMContentLoaded") {
@@ -170,6 +177,9 @@ var vkopt_core = {
    },
    init: function(){
       if (vkopt_core.disallow_location.test(document.location.href)) return;
+      var run = vkopt_core.run;
+      var check = vkopt_core.conflicts;
+      var lng = vkopt.lang.lng;
       //TODO: тут ещё бы дождаться подгрузки vk_lib.js
       vkopt_core.dom_ready(function(){
          // if (!isNewVk()) return;
@@ -177,17 +187,114 @@ var vkopt_core = {
             console.log('avoid vkopt init');
          } else {
             console.log('init vkopt 3.x');
-            vkopt_core.run();
+            run(function(){
+               check(lng);
+            });
          }
       });
    },
-   run: function(){
+   observeMutations: function(){
+      if (!vkopt.mObserver && window.MutationObserver && window.ge) {
+         vkopt.mObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(vkopt_core.plugins.on_mutation);
+         });
+         vkopt.mObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+         });
+      }
+   },
+   unobserveMutations: function() {
+      if (vkopt.mObserver) vkopt.mObserver.disconnect();
+      vkopt.mObserver = null;
+   },
+   conflicts: function(IDL){
+      var tpls = vk_lib.get_block_comments(function(){
+         /*content:
+         <div class="hide_icon fl_r" onclick="topMsg('', 0.001)"></div>
+         <div class="ta_c subheader">{lng.VkoptDupFound}</div>
+         {vals.versions}
+         <div class="ta_r">
+            <a href="/vkopt_club?w=page-16925304_54555865" class="flat_button button_indent">{lng.Help}</a>
+            <a href="http://vkopt.net/" target="_blank" class="flat_button">vkopt.net</a>
+         </div>
+         */
+         /*wrap:
+         <div class="msg">
+            <h4>{lng.Found}</h4>
+            {vals.vers}
+         </div>         
+         */
+         /*ver:
+         <div>{vals.version}<sup><i>{vals.postfix}</i></sup> (build {vals.build}) [{vals.types}]</div>
+         */
+      });
+
+      var content;
+      if (vkopt.versions.length > 1){
+         var vers = [];
+         each(vkopt.versions, function(i,info){
+            var types = [];
+            var lbr = window._vkopt_loader_browser;
+            for (var type in lbr)
+               lbr[type] && types.push(type);
+
+            var ver = vk_lib.tpl_process(tpls.ver, {
+               version: String(info.version).split('').join('.'),
+               postfix: info.postfix,
+               build: info.build,
+               types: types.join(' & ')
+            });
+            vers.push(ver);
+         });
+         content = vk_lib.tpl_process(tpls.content, {
+            versions: vk_lib.tpl_process(tpls.wrap, {
+               vers: vers.join('\n') 
+            })
+         });
+      } else {
+         try{
+            MessageBox.toString();
+         } catch(e) {
+            content = vk_lib.tpl_process(tpls.content, { versions: "" });
+         }
+      }
+
+      if (!content) return;
+
+      try {
+         ge("system_msg").style.visibility = "unset";
+         topMsg(content, 5);
+      } catch(e) {
+         vkopt.log(content.replace(/<\/?[^>]+>/,''));
+      }
+   },
+   run: function(check){
       // Под новый дизайн чуть другие функции работы с локализацией.
       vkopt.lang.override(); // TODO: убрать этот костыль при удалении скриптов для старого дизайна
       vkopt.settings.init_defaults();
+      check && check();
+
+      var wait = [];
       for (var key in StaticFiles)
-         if (StaticFiles[key].t == 'js' && StaticFiles[key].l)
-            vk_glue.inj_to_file(key);
+         if (StaticFiles[key].t == 'js' || /\.js$/.test(key)){
+            if (StaticFiles[key].l)
+               vk_glue.inj_handler([key])();
+            else
+               wait.push(key); // добавляем в список недозагруженных скриптов
+         }
+
+      if (window.stManager && wait.length){
+         vkopt.log('Wait ' + wait.length + ' scripts');
+         // чтоб узнать когда дозагрузятся подключенные скрипты,
+         // просто ещё раз запросим их подключение у stManager
+         // и получим колбек по завершению загрузки.
+         stManager.add(wait, function(){
+            vkopt.log('Loaded ' + wait.length + ' scripts');
+            vk_glue.inj_handler(wait)();
+         });
+      }
+
       vkopt_core.plugins.on_init();
       vk_glue.nav_handler();
       window.vkopt_core_ready = true;
@@ -276,9 +383,9 @@ var vkopt_core = {
          if (!css) return '';
          return (Object.prototype.toString.call(css) === '[object Function]')?css():css;
       },
-      on_js_file: function(file){
+      on_js_file: function(file, full_file_name){
          //console.log('on *.js: '+file);
-         vkopt_core.plugins.call_modules('onLibFiles', file);
+         vkopt_core.plugins.call_modules('onLibFiles', file, full_file_name);
       },
       on_location: function(){
          //console.log('on nav: ', cur.module, ' obj: ', JSON.stringify(nav.objLoc));
@@ -293,6 +400,11 @@ var vkopt_core = {
             if (res[i] === false)
                return false;
          return true;
+      },
+      on_mutation: function(mutation) {
+         // TODO: debounce && merge mutations 
+         if (mutation.addedNodes && mutation.addedNodes.length)
+            vkopt_core.plugins.call_modules('onAddedNodes', mutation.addedNodes);
       },
       process_response: function(answer, url, q){
          // answer - массив, элементы которого в последствии становятся аргументами вызываемых колбеков. можно править его элементы
@@ -310,13 +422,14 @@ var vkopt_core = {
             }
          }
          // для случаев, когда тело html'а передано не отдельным аргументом, а внутри какого-то JSON'а:
-         if (url === '/al_im.php' && q.act == 'a_start' && answer[0] && answer[0].history){ // открытие диалога
+         if (url === 'al_im.php' && q.act == 'a_start' && answer[0] && answer[0].history){ // открытие диалога
              answer[0].history = vkopt_core.mod_str_as_node(answer[0].history, vkopt_core.plugins.process_node, {source:'process_response_im_a_start', url:url, q:q});
          }
          vkopt_core.plugins.call_modules('onResponseAnswer', answer,url,q);
       },
       process_node: function(node, params){
          node = node || ge('content');
+         if (!node) return;
          var nodes=node.getElementsByTagName('a');
          for (var i=0;i<nodes.length;i++)
             vkopt_core.plugins.process_links(nodes[i],params);
@@ -345,35 +458,53 @@ var vkopt_core = {
 
 var vk_glue = {
    inj_handler: function(files){ // call from stManager.add(files, callback, async)  ->   vk_glue.inj_handler(files)
+      /*
+      // узнаем имя JS-файла, для которой file_name является одной из зависимостей
+      var depOf = function(file_name){
+         if (window.stDeps)
+            for (var js in stDeps)
+               if (stDeps[js].indexOf(file_name) > -1)
+                  return js;
+         return null;
+      }
+      */
       return function(no_pending){
          if (no_pending)
             console.log('no need inject?', files);
 
          if (!isArray(files)) files = [files];
+         /*
+         // добавляем в колбек имена файлов, которые зависят от подгруженных зависимостей
+         for (var i = 0; i < files.length; i++){
+            var dep = depOf(files[i]);
+            if (dep && files.indexOf(dep) > -1)
+               files.push(dep);
+         }
+         */
          for (var i in files){
-            if (files[i].indexOf('.js') != -1)
-               vk_glue.inj_to_file(files[i]);
+            if (isString(files[i]) && files[i].indexOf('.js') != -1)
+               vk_glue.inj_to_file(files[i].split('/').pop().replace(/\.[a-f0-9]{20}/,''), files[i]);
          }
       }
    },
-   inj_to_file: function(file_name){
+   inj_to_file: function(file_name, full_file_name){
       switch (file_name){
          case 'common.js':
          case 'common_web.js':
          case 'cmodules/web/common_web.js':
+         case 'lite.js':
             vk_glue.inj.common();  break;
          case 'auto_list.js':    vk_glue.inj.auto_list();  break;
          case 'ui_controls.js':  vk_glue.inj.ui_controls();  break;
          case 'datepicker.js':  vk_glue.inj.datepicker();  break;
          case 'notifier.js':  vk_glue.inj.notifier();  break;
       }
-      vkopt_core.plugins.on_js_file(file_name);
+      vkopt_core.plugins.on_js_file(file_name, full_file_name);
    },
    inj: {
       common: function(){
          // перехватываем момент подключения скриптов:
-         //Inj.BeforeR("stManager.add",/__stm._waiters.push\(\[([^,]+)/,"__stm._waiters.push([$1, vk_glue.inj_handler(#ARG0#)]);");
-         Inj.End("stManager.add",function(files, callback, asyn){
+         Inj.Start('stManager.add', function(files, cb){
             var f, wait = [];
             if (!isArray(files))
                files = [files];
@@ -383,18 +514,29 @@ var vk_glue = {
                if (!f) continue;
                if (f.indexOf('?') != -1)
                   f = f.split('?')[0];
-
-               if (!StaticFiles[f].l)
+               
+               if (!StaticFiles[f] && window.stDeps) {
+                  var deps = [];
+                  for (var dep in stDeps)
+                     if (dep.indexOf(f) > -1 && /.js$/.test(f))
+                        deps = deps.concat(stDeps[dep]);
+                  
+                  if (deps.length) each(deps, function(i, p) {
+                     wait.push(stManager._add(p));
+                  });
+               }
+               
+               if (StaticFiles[f] && !StaticFiles[f].l)
                   wait.push(f);
             }
 
-            if (wait.length)
-               stManager._waiters.push([wait, vk_glue.inj_handler(files)]);
+            var newCallback = function(f){
+               if (wait.length)
+                  vk_glue.inj_handler(files)();
+               cb && cb.apply(this, arguments);
+            }
+            this.args[1] = newCallback;
          });
-
-         // следующая строка не факт что нужна (а может оптимизированней будет, если её убрать), т.к она срабатывает только если у нас нет списка ожидания,
-         // т.е скрипты были ранее уже подгружены на страницу, и инъекции вероятно остались на месте.
-         //Inj.BeforeR("stManager.add",/(if\s*\(![a-zA-z_]+.length\))/,"$1{vk_glue.inj_handler(#ARG0#)(true);}"); //"_matched_{vk_glue.inj...
 
          // перехват события об аякс загрузке новой страницы / смене URL'а
          Inj.End('nav.setLoc',function(){
@@ -409,7 +551,7 @@ var vk_glue = {
          })
 
          // Перехватываем результат ajax-запросов с возможностью модификации перед колбеком
-         Inj.Start('ajax._post',
+         Inj.Start('ajax.post',
          // ARG0 - url; ARG1 - query object; ARG2 - options
          function(url, query, options){
              // Mod callback:
@@ -525,7 +667,7 @@ var vk_glue = {
       return vkopt_core.mod_str_as_node(html, vkopt_core.plugins.process_node);
    },
    process_on_post: function(url, query, options){
-      return vkopt_core.plugins.on_ajax_post(url, query, options);
+      return vkopt_core.plugins.on_ajax_post(url, query || {}, options);
    },
    response_handler: function(answer,url,q){
       // try{
@@ -546,14 +688,15 @@ var vk_glue = {
    var m = {
       id: 'vkopt_any_plugin',
       // <core>
-      onInit:                 function(){},                                // выполняется один раз после загрузки стрницы
-      onLibFiles:             function(file_name){},                       // место для инъекций = срабатывает при подключении нового js-файла движком контакта.
+      onInit:                 function(){},                                // выполняется один раз после загрузки страницы
+      onLibFiles:             function(file_name, full_file_name){},       // место для инъекций = срабатывает при подключении нового js-файла движком контакта.
       onLocation:             function(nav_obj,cur_module_name){},         // вызывается при переходе между страницами
       onRequestQuery:         function(url, query, options){}              // вызывается перед выполнением ajax.post метода. Если функция вернёт false, то запрос выполнен не будет.
       onResponseAnswer:       function(answer,url,params){},               // answer - массив, изменять только его элементы
       onCmd:                  function(command_obj){},                     // слушает сообщения отосланные из других вкладок вк через vkopt.cmd(command_obj)
       processNode:            function(node, params){}                     // обработка элемента
       processLinks:           function(link, params){},                    // обработка ссылки
+      onAddedNodes:           function(addedNodes) {},                     // обработка NodeList'а добавленных элементов (MutationObserver). Должна быть активна хотя бы одна опция с флагом use_mutations: true
       onModuleDelayedInit:    function(plugin_id){},                       // реакция на подключение модуля, опоздавшего к загрузке страницы.
       onElementTooltipFirstTimeShow: function(ett, ett_options),           // реакция на первый показ ElementTooltip, при создании его контента. На момент вызова в элементе ett._ttel уже есть контент. По ett._opts.id можно определить к чему тултип относится.
       // UNAVAILABLE! onInlineDropdownCreate: function(el, options),       // реакция на создание контрола InlineDropdown. Можно использовать для добавления своих пунктов в options.items для меню элемента el
@@ -1080,7 +1223,7 @@ var vk_glue = {
          if (typeof requestFileSystem != "undefined")
             creationMethod = 'File';
          else
-         if (typeof IDBMutableFile != "undefined")
+         if (typeof IDBMutableFile != "undefined" && (IDBMutableFile.prototype || {}).getFile) // not support in Firefox 74
             creationMethod = 'MutableFile';
 
       function createTempFile(file_name, callback) {
@@ -1362,7 +1505,7 @@ vkopt.permissions = { // for chromium
       });
    },
    check_dl_url: function(el, url){
-      if (!(vkbrowser.chrome || vk_ext_api.browsers.webext) || vk_ext_api.browsers.maxthon || vkopt.permissions.check_url(url, vkopt.permissions.origins_cache)){
+      if ((vk_ext_api.browsers.gm || {}).download || !(vkbrowser.chrome || vk_ext_api.browsers.webext) || vk_ext_api.browsers.maxthon || vkopt.permissions.check_url(url, vkopt.permissions.origins_cache)){
          return true;
       } else {
          show(boxLayerBG);
@@ -1393,7 +1536,30 @@ vkopt['res'] = {
       ldr_mono: '<img src="/images/upload_inv_mono.gif">',
       ldr_mini: '<img src="/images/upload_inv_mini.gif">',
       ldr_big: '<center><img src="/images/progress7.gif"></center>'
-   }
+   },
+   forceDownload: function(blob, filename) {
+      var a = document.createElement('a');
+      a.download = filename;
+      a.href = blob;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    },
+    downloadResource: function(url, filename) {
+      if (!filename) filename = url.split('\\').pop().split('/').pop();
+      fetch(url, {
+          headers: new Headers({
+            'Origin': location.origin
+          }),
+          mode: 'cors'
+        })
+        .then(response => response.blob())
+        .then(blob => {
+          let blobUrl = window.URL.createObjectURL(blob);
+          vkopt.res.forceDownload(blobUrl, filename);
+        })
+        .catch(e => console.error(e));
+    },
 };
 
 vkopt['settings'] =  {
@@ -1417,9 +1583,16 @@ vkopt['settings'] =  {
          .vk_setts_wrap{
             padding: 0 25px;
          }
-         .settings_labeled_text.vk_settings_block {
+         .settings_labeled_text.vk_settings_block,
+         [dir] .settings_labeled_text.vk_settings_block
+         {
              margin-left: 0px;
              width: 293px;
+         }
+         .settings_label.vk_setts_cat_header,
+         [dir] .settings_label.vk_setts_cat_header {
+             display: block;
+             float: none;
          }
          .wide_column .settings_labeled_text.vk_settings_block {
              width: 248px;
@@ -1438,7 +1611,8 @@ vkopt['settings'] =  {
              border-right: 1px solid #e7e8ec;
              padding-right: 5px;
          }
-         .vk_settings_block.vk_settings_block_right {
+         .vk_settings_block.vk_settings_block_right,
+         [dir] .vk_settings_block.vk_settings_block_right {
              padding-left: 5px;
              border-left: 1px solid #e7e8ec;
              margin-left: -1px;
@@ -1456,7 +1630,9 @@ vkopt['settings'] =  {
          .vk_settings_block .checkbox .vk_checkbox_caption{
             padding-left:20px;
          }
-         .vk_settings_block #dev_colorpicker{
+         .vk_settings_block #dev_colorpicker,
+         [dir] .vk_settings_block #dev_colorpicker
+         {
             margin-left: 107px;
          }
          .vk_settings_block .dev_labeled{
@@ -1602,7 +1778,7 @@ vkopt['settings'] =  {
    },
    onInit: function(){
       // <UI>
-      vkopt.settings.__full_title = vk_lib.format('Vkontakte Optimizer %1<sup><i>%2</i></sup> (build %3)', String(vVersion).split('').join('.'), vPostfix, vBuild);
+      vkopt.settings.__full_title = vk_lib.format('VKOpt Reloaded %1<sup><i>%2</i></sup> (build %3)', String(vVersion).split('').join('.'), vPostfix, vBuild);
       var values = {
          full_title: vkopt.settings.__full_title
       };
@@ -1871,7 +2047,7 @@ vkopt['settings'] =  {
                      b: '<b>%s</b>',
                      n: '<br />',
                      warn: '<span class="vk_welcome_warn">%s</span>',
-                     a_site:'<a href=\"http://vkopt.net/\" target=_blank><b>%s</b></a>',
+                     a_site:'<a href=\"https://github.com/xiadosw/VkOpt-Reloaded#readme\" target=_blank><b>%s</b></a>',
                      a_cfg:'<a href=\"/settings.php?act=vkopt\" target=_blank>%s</a>',
                      a_forum:'<a href=\"http://vkopt.net/forum/forumdisplay.php?f=4\" target=_blank>%s</a>',
                      a_faq:'<a href=\"http://vkopt.net/forum/forumdisplay.php?f=4\" target=_blank>%s</a>'
@@ -1902,7 +2078,7 @@ vkopt['settings'] =  {
       }
    },
    init_features: function(list, plug_id){
-
+      var use_mutations = false;
       var each_in_opts = function(list){
          for (var option_id in list){
             var option_data = list[option_id];
@@ -1911,6 +2087,7 @@ vkopt['settings'] =  {
                option_data.id = option_id;
             }
             vkopt.settings.set_feature(option_data, vkopt.settings.get(option_data.id));
+            use_mutations = (option_data.use_mutations && vkopt.settings.get(option_data.id)) || use_mutations;
 
             if (list[option_id].sub)              // обходим вложенные опции.
                each_in_opts(list[option_id].sub);
@@ -1920,10 +2097,11 @@ vkopt['settings'] =  {
       for (var cat in list){
          each_in_opts(list[cat]);
       }
+      if (use_mutations) vkopt_core.observeMutations();
    },
    top_menu_item: function(){
       var ref = ge('top_support_link');
-      var item = se('<a class="top_profile_mrow" id="top_vkopt_settings_link" href="/settings?act=vkopt" onclick="return vkopt.settings.show(this, true);">VkOpt</a>');
+      var item = se('<a class="top_profile_mrow" id="top_vkopt_settings_link" href="/settings?act=vkopt" onclick="return vkopt.settings.show(this, true);">VKOpt Reloaded</a>');
       if (ref && !ge('top_vkopt_settings_link')){
          ref.parentNode.insertBefore(item, ref);
       }
@@ -2267,12 +2445,12 @@ vkopt['lang'] = {
             padding:2pt 5pt;
             margin:2pt;
             border_:solid 1pt #5c82ab;
-            background:#fff;
+            backdrop-filter: contrast(85%);
             width:100pt;
             height:50pt;
          }
          .vk_lang a.selected{
-            background-color: #e5ebf1;
+            background-color: #476d96;
          }
          .vk_lang a{
            -o-transition: all 0.25s ease-out;
@@ -2284,7 +2462,7 @@ vkopt['lang'] = {
          .vk_lang a:hover, .vk_lang a:focus, .vk_lang a.selected:hover{
             text-decoration:none;
             color:#fff;
-            background:#476d96;
+            backdrop-filter: contrast(70%);
          }
          .vk_lang .vk_lang_icon{margin:auto;display:block;clear:both;width:48px;height:48px;}
          .vk_lang .vk_lang_icon_ru{background-image:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAMAAABg3Am1AAAAXVBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////eEBgRWKnfEhrgGyMTWqnPDxYmZ7AzcLVCe7o6dbcsa7IPV6gOVqcNVaceYazSDxcwbrTbGiLYFh3VEhpMgr4qarKTDQFWAAAACHRSTlMAJxtZDRUIRLAAvJYAAACPSURBVEjH7ctHEsIwDAVQJWCHYsWFkp77HxOLXEDfM8yw8Ns/qlTsGWCJzAViqMVCSw0Wmhr+JYQtqm1BQkxqUcKUglqaJDwAEnYP2HPwDPASbgAJAxIGCfxU4yO81L6B+a3GnMPs7mpuLgmLu6q5pSSsSFhLwoiE8eehz6F3ekdA5GC6E6AzZE0LMJYqhQ/0BEft1j2DHgAAAABJRU5ErkJggg==");}
@@ -2357,7 +2535,7 @@ vkopt['lang'] = {
    lng: function(id,options){ // if options is [Object] - apply macro replacing to lang string; else if  options = 2 - remove [], other  - add []
       vkopt.lang.get();
       var str = vkopt.lang.str_by_name(id);
-      if (isObject(options)) {
+      if ("[object Object]" === Object.prototype.toString.call(options)) {
          str = str.replace(/\{([a-z_\-\.]+)(?:\|([^\{\}]*?))?\}/g, function(s,key, val){
             if (options[key]){
                return val ? options[key].replace(/%s/g, val) : options[key]
@@ -2550,7 +2728,6 @@ vkopt['side_bar'] = {
       return {
          'profile': [
             ['wall' + vkmid, IDL('mWAllPosts')],
-            [['#', "showWiki({w: 'postbox'}, false, event, {queue: 1, stat: ['wkview.js' ,'wkview.css', 'postbox.js', 'postbox.css', 'wide_dd.js', 'wide_dd.css', 'page.js', 'page.css']}); return false;"], IDL('NewPost')],
             ['/notes', IDL("mNoM")],
             [['/gifts' + vkmid, "return !showBox('al_gifts.php',{act:'box',tab:'received',mid:"+vkmid+"},{cache:1,stat:['gifts.css','gifts.js']})"], IDL('clGi')],
             [['#', "return !showTabbedBox('al_page.php', {act: 'box', oid: "+vkmid+", tab: 'fans'}, {cache: 1}, event)"], IDL('clFans')],
@@ -2652,6 +2829,7 @@ vkopt['side_bar'] = {
             ["bookmarks?type=post", IDL("mFaPO")],
             ["bookmarks?type=article", IDL("Articles")],
             ["bookmarks?type=video", IDL("mFaVI")],
+            [["#", "return nav.change({z: 'album"+vkmid+"_0000000'}, event)"], IDL("mFaP")],
             ["bookmarks?type=link", IDL("mFaL")],
             ["bookmarks?type=podcast", IDL("Podcasts")],
             ["bookmarks?type=product", IDL("Products")],
@@ -2805,6 +2983,7 @@ vkopt['photoview'] =  {
          photo_search_copy:{},
          ph_download_with_name:{},
          ph_show_save_info:{default_value: true},
+         ph_allow_to_profile:{default_value: true},
          ph_update_btn:{},
          photo_copy_btn:{default_value: true},
          pv_hide_comments_btn: {
@@ -2873,7 +3052,7 @@ vkopt['photoview'] =  {
          .vk_pv_comm_move_down .pe_main_wrap {
             padding-bottom: 50px;
          }
-         #pv_more_acts_tt .vk_ph_copy_search.pv_more_act_item{
+         [dir] #pv_more_acts_tt .vk_ph_copy_search.pv_more_act_item{
             padding: 8px 5px;
          }
          #pv_more_acts_tt .vk_ph_copy_search.pv_more_act_item:before{
@@ -2885,11 +3064,11 @@ vkopt['photoview'] =  {
          .vk_ph_copy_search_links{
             padding-left:6px;
          }
-         #pv_more_acts_tt .pv_more_act_item.vk_ph_sz_link{
+         [dir] #pv_more_acts_tt .pv_more_act_item.vk_ph_sz_link{
             float:left;
             padding: 8px 6px;
          }
-         #pv_more_acts_tt .pv_more_act_item.vk_ph_sz_hdlink {
+         [dir] #pv_more_acts_tt .pv_more_act_item.vk_ph_sz_hdlink {
              float: right;
              padding: 8px 6px;
          }
@@ -2897,16 +3076,16 @@ vkopt['photoview'] =  {
          #pv_more_acts_tt .vk_ph_sz_hdlink.pv_more_act_item:before{
             display: none;
          }
-         #pv_more_acts_tt .vk_ph_sz_btn.pv_more_act_item:before,
-         #pv_more_acts_tt .vk_ph_copy_search_label.pv_more_act_item:before,
-         #pv_more_acts_tt .vk_pv_more_act_item.pv_more_act_item:before{
+         [dir] #pv_more_acts_tt .vk_ph_sz_btn.pv_more_act_item:before,
+         [dir] #pv_more_acts_tt .vk_ph_copy_search_label.pv_more_act_item:before,
+         [dir] #pv_more_acts_tt .vk_pv_more_act_item.pv_more_act_item:before{
             background-image: url("data:image/svg+xml,%3Csvg%20version%3D%221.1%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%09%20viewBox%3D%220%200%20256%20256%22%3E%3Cpath%20fill-rule%3D%22evenodd%22%20clip-rule%3D%22evenodd%22%20fill%3D%22%23FFFFFF%22%20d%3D%22M204.1%2C66l-25.3%2C30.4c-14.1-25-44.3-37.6-72.7-28.5%09c-32.5%2C10.4-50.5%2C45.2-40%2C77.8c6.2%2C19.4%2C21.2%2C33.6%2C39.1%2C39.7c7.4%2C14%2C15.4%2C31.9%2C21.1%2C46c-7.5%2C7.8-12.1%2C19.6-12.1%2C19.6l-30.9-6.7%09l3.5-26.3c-4.8-2-9.5-4.4-13.9-7.2L53.6%2C229l-23.4-21.3l16.2-21c-3.1-4.1-6-8.5-8.5-13.2l-25.8%2C6l-9.7-30.1l24.5-10.1%09c-0.7-5.3-0.9-10.5-0.8-15.7L0.8%2C116l6.7-30.9l26.3%2C3.5c2-4.8%2C4.4-9.5%2C7.2-13.9L22.8%2C55.3l21.3-23.4l21%2C16.2c4.1-3.1%2C8.5-6%2C13.2-8.5%09l-6-25.8l30.1-9.7l10.1%2C24.5c5.3-0.7%2C10.5-0.9%2C15.7-0.8l7.7-25.4l30.9%2C6.7l-3.5%2C26.3c4.8%2C2%2C9.5%2C4.4%2C13.9%2C7.2l19.3-18.2l23.4%2C21.3%09l-15.4%2C20L204.1%2C66z%20M79%2C106.3l49.8-18.1l44.6%2C87.8l31.7-95.6l50%2C18.1c-11%2C24.1-21%2C48.8-30.1%2C74c-9.1%2C25.2-17.2%2C50.9-24.4%2C77h-50.9%09c-9.5-22.9-20.2-46.3-32-70.2C105.8%2C155.3%2C92.9%2C131%2C79%2C106.3z%22/%3E%3C/svg%3E");
             background-position: 0 0;
             background-repeat: no-repeat;
             width: 16px;
             margin-top: -2px;
          }
-         #pv_more_acts_tt .vk_pv_copy_act_item.pv_more_act_item:before{
+         [dir] #pv_more_acts_tt .vk_pv_copy_act_item.pv_more_act_item:before{
             background-position: 0 -79px;
          }
          #pv_more_acts_tt .vk_ph_sz_btn.pv_more_act_item{
@@ -2959,6 +3138,20 @@ vkopt['photoview'] =  {
          .vk_pv_comm_move_down.vk_pv_hide_comments_btn.vk_pv_hide_comments #pv_box .pv_narrow_column_wrap{
             display:none;
          }
+         .vk_pv_comm_move_down .StickersPanel__content,
+         .vk_pv_comm_move_down .FiltersPanel__inner{
+            text-align: center;
+         }
+         .vk_pv_comm_move_down .PhotoEditor__tabs {
+            width: 100%;
+         }
+         .vk_pv_comm_move_down .StickersPanel__row {
+            display: inline-block;
+         }
+         .vk_pv_comm_move_down .FiltersItem {
+            display: inline-block;
+            width: auto;
+         }
          */
       }).css;
    },
@@ -2993,13 +3186,13 @@ vkopt['photoview'] =  {
          <div class="vk_pv_acts">
             <div class="pv_counter vk_ph_copy_search_label pv_more_act_item">{lng.ImgCopySeacrh}</div>
             <div class="vk_ph_copy_search_links">
-            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.google.com/searchbyimage?image_url={vals.src}">Google</a>
-            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.tineye.com/search?url={vals.src}">TinEye</a>
-            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://yandex.ru/images/search?img_url={vals.src}&rpt=imageview">Yandex</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.google.com/searchbyimage?image_url={vals.qsrc}">Google</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.tineye.com/search?url={vals.qsrc}">TinEye</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://yandex.ru/images/search?rpt=imageview&url={vals.qsrc}">Yandex</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.bing.com/images/searchbyimage?cbir=sbi&imgurl={vals.src}">Bing</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://karmadecay.com/{vals.src}">KarmaDecay</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://imgops.com/{vals.src}">ImgOps</a>
-            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://iqdb.org/?url={vals.src}">IQDB</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://iqdb.org/?url={vals.qsrc}">IQDB</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="/feed?section=photos_search&q=copy%3Aphoto{vals.photo_id}">VK</a>
             <div class="clear"></div>
             </div>
@@ -3043,7 +3236,7 @@ vkopt['photoview'] =  {
          if (cur.pvCurPhoto && cur.pvCurPhoto.id){
             var html = vk_lib.tpl_process(vkopt.photoview.tpls['act_item'],{
                class_name: 'vk_pv_more_act_item',
-               onclick: 'vkopt.photos.update_photo(cur.pvCurPhoto.id);',
+               onclick: 'vkopt.photos.update_photo(cur.pvCurPhoto.id, cur.pvCurPhoto.peHash);',
                text: IDL('Update')
             });
             append_menu(html);
@@ -3053,6 +3246,7 @@ vkopt['photoview'] =  {
       if (vkopt.settings.get('photo_search_copy')){
          var html = vk_lib.tpl_process(vkopt.photoview.tpls['acts_menu'],{
             src: cur.pvCurData.src,
+            qsrc: encodeURIComponent(cur.pvCurData.src),
             photo_id: cur.pvCurPhoto.id
          });
          append_menu(html);
@@ -3105,7 +3299,20 @@ vkopt['photoview'] =  {
 
    },
    onResponseAnswer: function(answer, url, q) {
-      if (url == '/al_photos.php' && q.act == 'save_me' && answer[0]){
+      var LST_IDX = 3;
+      // Unlock set as profile photo
+      if (url == 'al_photos.php' && q.act == "show" && answer[LST_IDX] && answer[LST_IDX][0] && answer[LST_IDX][0].id){
+         if (!vkopt.settings.get('ph_allow_to_profile')) return;
+         var plist = answer[LST_IDX];
+         plist.forEach((item, idx) => {
+            if (item.actions && !item.actions.prof && item.id.split("_").shift() == vk.id) {
+               item.actions.prof = 1;
+               item.profile_data = {photo: item.id};
+               vkopt.log("Add profile_data and prof=1 for " + item.id);
+            }
+         });
+      }
+      if (url == 'al_photos.php' && q.act == 'save_me' && answer[0]){
          if (!vkopt.settings.get('ph_show_save_info')) return;
          if (window.cur && cur.pvData){
 			var idx = cur.pvIndex,
@@ -3139,9 +3346,9 @@ vkopt['photoview'] =  {
             )) {
    			if (!cur.pvTagger && !boxQueue.count() && !document.activeElement.focused ) { //&& (!cur.pvComment || !cur.pvComment.focused)
    				if (is_next) {
-   					photoview.show(cur.pvListId, cur.pvIndex + 1);
+   					Photoview.show(cur.pvListId, cur.pvIndex + 1);
    				} else {
-   					photoview.show(cur.pvListId, cur.pvIndex - 1);
+   					Photoview.show(cur.pvListId, cur.pvIndex - 1);
    				}
    			}
    			vkopt.photoview.allow_scroll_view = false;
@@ -3207,7 +3414,7 @@ vkopt['photoview'] =  {
       }
 
 
-      dApi.call('photos.copy',{owner_id: oid, photo_id: pid, access_key: pdata.pe_hash}, {
+      dApi.call('photos.copy',{owner_id: oid, photo_id: pid, access_key: pdata.peHash}, {
          ok:function(resp, r, err){
             if (!r)  return;
             saved_pid = r;
@@ -3260,8 +3467,16 @@ vkopt['photoview'] =  {
    move_comments_block:{
       inj: function(){
          if (vkopt.settings.get('pv_comm_move_down') && typeof Photoview != 'undefined'){
-            Inj.Replace('Photoview.updateVerticalPosition', /Math\.round/g, 'vkopt.photoview.move_comments_block.mod');
-            Inj.Replace('Photoview.doShow', /new uiScroll\(/i, "(vkopt.settings.get('pv_comm_move_down') ? function(){} : new uiScroll)("); // вырубаем подмену скролла для блока комментов
+            Inj.End('Photoview.updateVerticalPosition', function(){
+               if (cur.pvCont && vkopt.settings.get('pv_comm_move_down')) {
+                  var m = parseInt(getStyle(layer, "margin-top"));
+                  setStyle(layer, "margin-top", vkopt.photoview.move_comments_block.mod(m))
+               }
+            });
+            Inj.End('Photoview.doShow', function(){  // вырубаем подмену скролла для блока комментов
+               if (cur.pvNarrowScrollbar)
+                  cur.pvNarrowScrollbar.destroy();
+            });
             if (!vkopt.photoview._SIDE_COLUMN_WIDTH_BKP && Photoview.SIDE_COLUMN_WIDTH)
                vkopt.photoview._SIDE_COLUMN_WIDTH_BKP = Photoview.SIDE_COLUMN_WIDTH;
             Photoview.SIDE_COLUMN_WIDTH = 0;
@@ -3282,6 +3497,9 @@ vkopt['photos'] =  {
       }
       #vk_ph_upd_btn:hover{
          opacity:1
+      }
+      #vk_upd_type .radiobtn{
+         padding-right: 20px;
       }
 
       .vk_photos_album_more_btn {
@@ -3328,12 +3546,25 @@ vkopt['photos'] =  {
       /*more_acts_item_sep:
       <div class="ui_actions_menu_sep"></div>
       */
+      /*upd_methods:
+      <div id="vk_upd_type">
+         <div id="updmethod1" class="fl_l radiobtn on" data-val="1" onclick="radiobtn(this, '1', 'updmethod');">Method #1</div>
+         <div id="updmethod2" class="fl_l radiobtn"    data-val="2" onclick="radiobtn(this, '2', 'updmethod');">Method #2</div>
+      </div>
+      */
+      /*update_box:
+      <center>
+         <div id="vk_upd_info"></div>
+         <div id="vk_upd_photo"></div>
+         <div id="vk_upd_photo_progress"></div>
+      </center>
+      */
       });
    },
    onPhotoAlbumItems: function(aid, oid){
       var items = [];
       var loc = nav.objLoc[0];
-      if (!nav.objLoc['act']){
+      if (!nav.objLoc['act'] && aid != '0000000' ){
          items.push({
             text: 'mPhC',
             href: '/'+nav.objLoc[0]+'?act=comments'
@@ -3355,84 +3586,212 @@ vkopt['photos'] =  {
       }
    },
    onResponseAnswer: function(answer,url,q){
-      if (url == '/al_photos.php' && q.act == 'edit_photo' && (vkopt.settings.get('photo_replacer'))){
-         answer[1] = vkopt_core.mod_str_as_node(answer[1], vkopt.photos.update_photo_btn, {source:'process_edit_photo_response', url:url, q:q});
+      if (url == 'al_photos.php' && q.act == 'get_editor_data' && (vkopt.settings.get('photo_replacer'))){
+         setTimeout(vkopt.photos.update_photo_btn, 100);
       }
    },
-   update_photo: function(photo_id){
-      var box=vkAlertBox(IDL('Upload'),'<center><div id="vk_upd_photo"></div><div id="vk_upd_photo_progress"></div></center>');
-      stManager.add(['upload.js','filters.js'],function(){
+   update_photo: function(photo_id, pe_hash){
+      var
+         box=vkAlertBox(IDL('Upload'), vk_lib.tpl_process(vkopt.photos.tpls['update_box'], {})),
+         source_size = null,
+         new_size = null;
+
+      box.setControlsText(vk_lib.tpl_process(vkopt.photos.tpls['upd_methods'], {}));
+      radioBtns.updmethod = {
+         els : Array.prototype.slice.apply(geByClass("radiobtn", ge("vk_upd_type"))),
+         val : 1
+      };
+
+
+      if (!photo_id){
+         photo_id = cur.pvCurPhoto.id;
+         pe_hash = cur.pvCurPhoto.peHash;
+      }
+
+      stManager.add([window.jsc("web/upload.js"), window.jsc('web/filters.js')],function(){
          var photo=photo_id;
          if (/photo-?\d+_\d+/.test(photo)) photo=photo.match(/photo(-?\d+_\d+)/)[1];
-         AjPost('/al_photos.php',{'act':'edit_photo', 'al': 1, 'photo': photo},function(t){
-               var upload_url=t.match(/"upload_url":"(.*)"/);
-               var hash=t.match(/', '([a-f0-9]{18})'\)/);
-               var aid=t.match(/selectedItems:\s*\[(-?\d+)\]/)[1];
-               upload_url = upload_url[1].replace(/\\\//g, '/').split('"')[0];
-               if (vk_DEBUG) console.log('url',upload_url);
-               Upload.init('vk_upd_photo', upload_url, {}, {
-                  file_name: 'photo',
-                  file_size_limit: 1024 * 1024 * 5,
-                  file_types_description: 'Image files (*.jpg, *.jpeg, *.png, *.gif)',
-                  file_types: '*.jpg;*.JPG;*.jpeg;*.JPEG;*.png;*.PNG;*.gif;*.GIF',
-                  onUploadStart:function(){
-                     ge('vk_upd_photo_progress').innerHTML = vkopt.res.img.ldr_big;
-                     //lockButton
-                  },
-                  onUploadComplete: function(u,res){
-                     var data = {};
-                     try{
-                        data = JSON.parse(res);
-                     }catch(e){ }
-                     if (data.error){
-                        box.hide();
-                        vkAlertBox(IDL('Error'), data.error);
-                        return;
+         dApi.call('photos.getById',{photos:photo, photo_sizes: 1, v:"5.101"}, function(r,items){
+            var photo = items.shift()
+            if (!photo)
+               return;
+            var sz = photo.sizes.sort(function(a,b){return a.width>b.width ? 1 : -1}).pop();
+            if (!sz.width)
+               return;
+            source_size = sz;
+            val('vk_upd_info', IDL('SourceSize')+ ' ' + sz.width + 'x' + sz.height + 'px');
+         })
+         var saveDone = function(msg){
+            box.hide();
+            vkMsg(IDL('Done'),2000);
+            if (msg)
+               vkAlertBox(getLang('global_warning'), IDL('Done') + '<br>' + msg);
+
+         }
+         var uploadDone = function(callback){
+            return function (u,_query){
+               var data = {};
+               try{
+                  data = JSON.parse(_query);
+               }catch(e){ }
+
+               var msg =  '';
+               new_size = new_size || {};
+               source_size = source_size || {};
+               if (source_size.width > new_size.width || source_size.height > new_size.height){
+                  msg += '<b>' + IDL('SourceSize') + ' > ' + IDL('NewSize') + '</b><br>' +
+                         IDL('SourceSize')+ ': ' + source_size.width + 'x' + source_size.height + 'px<br>' +
+                         IDL('NewSize')+ ': ' + new_size.width + 'x' + new_size.height + 'px<br><br>';
+               }
+
+               if (data.error){
+                  box.hide();
+                  msg += getLang('global_error_occured') + ':<br>' + data.error;
+                  vkAlertBox(getLang('global_box_error_title'), msg);
+                  return;
+               }
+
+               callback(_query, msg);
+            }
+         }
+
+         var baseParams = {
+            file_size_limit: 1024 * 1024 * 5,
+            file_types_description: 'Image files (*.jpg, *.jpeg, *.png, *.gif)',
+            file_types: '*.jpg;*.JPG;*.jpeg;*.JPEG;*.png;*.PNG;*.gif;*.GIF',
+            onUploadStart: function(){
+               ge('vk_upd_photo_progress').innerHTML = vkopt.res.img.ldr_big;
+            },
+            filterCallback: function(uploader, files){
+               var img = vkImage();
+               img.onload = function(){
+                  if (img.width && img.height)
+                     new_size = {
+                        width: img.width,
+                        height: img.height
                      }
-                     var params = {
-                        '_query' 	 : res,
-                        'act' 	 	 : 'save_desc',
-                        'aid' 	 	 : aid,
-                        'al' 	 	    : 1,
-                        'conf' 	 	 : '///',
-                        'cover'  	 : '',
-                        'filter_num' : 0,
-                        'hash' 		 : hash[1],
-                        'photo'		 : photo,
-                        'text' 		 :''
-                     };
-                     ajax.post('/al_photos.php', params,{
-                        onDone: function(text, album, photoObj, thumb) {
-                           box.hide();
-                           vkMsg(IDL('Done'),2000);
-                           if (photoObj && thumb) {
-                              if (typeof FiltersPE != 'undefined'){
-                                 FiltersPE.changeThumbs(thumb);
-                              }
-                              if (typeof Filters != 'undefined'){
-                                 Filters.changeThumbs(thumb);
-                              }
+               }
+               img.src = URL.createObjectURL(files[0]);
+               return files;
+            }
+         };
+         var curUpload = null;
+         var makeUploader = function(upload_url, options){
+            if (curUpload !== null){
+               Upload.deinit(curUpload);
+               curUpload = null;
+            }
+            curUpload = Upload.init('vk_upd_photo', upload_url, {}, extend(options, baseParams));
+         }
+
+         var filtersEditor = function(){
+            ajax.post('/al_photos.php', {act:'edit_photo', /*cors: 1, webgl: 1,*/ photo: photo}, {
+               onDone: function(s, html, js, noname) {
+                  var upload_url = js.match(/"upload_url":"(.*?)"/);
+                  var hash = js.match(/', '([a-f0-9]{18})'\)/);
+                  var aid = js.match(/selectedItems:\s*\[(-?\d+)\]/)[1];
+                  upload_url = upload_url[1].replace(/[\\]+/g, '').split('"')[0];
+
+                  var uploadParams = {
+                     file_name: 'photo',
+                     lang: { "button_browse":IDL("Browse",1)+' #1' },
+                     onUploadComplete: uploadDone(function(_query, msg){
+                        var params = {
+                           '_query' 	 : _query,
+                           'act' 	 	 : 'save_desc',
+                           'aid' 	 	 : aid,
+                           'al' 	 	    : 1,
+                           'conf' 	 	 : '///',
+                           'cover'  	 : '',
+                           'filter_num' : 0,
+                           'hash' 		 : hash[1],
+                           'photo'		 : photo,
+                           'text' 		 :''
+                        };
+                        ajax.post('/al_photos.php', params,{
+                           onDone: function(text, album, photoObj, thumb) {
+                              saveDone(msg)
+
+                              if (photoObj && thumb) {
+                                 cur.filterPhoto = photo_id;
+                                 if (typeof FiltersPE != 'undefined'){
+                                    FiltersPE.changeThumbs(thumb);
+                                 }
+                                 if (typeof Filters != 'undefined'){
+                                    Filters.changeThumbs(thumb);
+                                 }
 
 
+                              }
                            }
-                        }
-                     });
-                  },
-                  lang: { "button_browse":IDL("Browse",1) }
-               });
+                        });
+                     })
+                  }
+                  makeUploader(upload_url, uploadParams);
+               }
+            });
+         }
+
+         var stickersEditor = function(){
+            ajax.post("al_photos.php", {
+               act: "get_editor",
+               photo_id: photo_id,
+               hash: pe_hash
+            }, {
+               onDone: function(opts){
+                  var uploadParams = {
+                     file_name: 'file0',
+                     lang: { "button_browse":IDL("Browse",1)+' #2' },
+                     onUploadComplete: uploadDone(function(_query, msg){
+                        ajax.post("al_photos.php", {
+                           act: "pe_save",
+                           photo: photo_id,
+                           hash: pe_hash,
+                           _query: _query,
+                           //stickers: null,
+                           //need_copy: b.need_copy,
+                           texts: ""
+                        }, {
+                           onDone: function(album_link_html, photoData, src, sizes, temp) {
+                              saveDone(msg);
+                           }
+                        })
+                     })
+                  }
+                  makeUploader(opts.uploadUrl, uploadParams);
+               }
+            });
+         }
+
+         each(geByClass("radiobtn", ge("vk_upd_type")), function(i,el){
+            addEvent(el, 'click', function(e){
+               switch(radioBtns.updmethod.val){
+                  case '1': {
+                     filtersEditor();
+                     break;
+                  }
+                  case '2': {
+                     stickersEditor();
+                     break;
+                  }
+               }
+            });
          });
+
+         filtersEditor();
       });
       return false;
    },
    update_photo_btn:function(node){
       var p = geByClass('pe_filter_buttons',node)[0] ? geByClass('pe_filter_buttons',node)[0] : geByClass('pv_filter_buttons',node)[0];
+      if (!p) p = geByClass1('StatusPanel__inner');
       if (!p) return;
-      var btn = se('<div class="button_gray fl_r" id="vk_ph_upd_btn"><button onclick=" vkopt.photos.update_photo(cur.filterPhoto);">'+IDL('Update',2)+'</button></div>');
+      var btn = se('<div class="button_gray fl_r" id="vk_ph_upd_btn"><button onclick=" vkopt.photos.update_photo(cur.filterPhoto, (cur.pvCurPhoto || {}).peHash);">'+IDL('Update',2)+'</button></div>');
       p.appendChild(btn);
    },
-   album_actions: function(aid, oid){ // добавляем кнопку на обзор комментариев к фото, если она отсутствует
+   album_actions: function(aid, oid, h){ // добавляем кнопку на обзор комментариев к фото, если она отсутствует
       var cnt = 0, btn, p = ge('photos_all_block');// || ge('photos_container_photos');
-      var h = geByClass1('page_block_header_extra', p);
+      h = h || geByClass1('page_block_header_extra', p);
       if (!h || geByClass1('vk_photos_album_more_btn', h)) return;
 
       btn = se(vk_lib.tpl_process(vkopt.photos.tpls['more_acts'], {}));
@@ -3512,6 +3871,13 @@ vkopt['albums'] = {
             vertical-align: top;
             margin-right: 10px;
          }
+         .vk_bottom_arrow {
+            background: url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%23828A99%22%20d%3D%22M5%2014c1.1%200%202-.9%202-2s-.9-2-2-2-2%20.9-2%202%20.9%202%202%202zm7%200c1.1%200%202-.9%202-2s-.9-2-2-2-2%20.9-2%202%20.9%202%202%202zm7%200c1.1%200%202-.9%202-2s-.9-2-2-2-2%20.9-2%202%20.9%202%202%202z%22%2F%3E%3C%2Fsvg%3E') 50% 31px no-repeat;
+         }
+         .vk_pa_actions_wrp {
+            position: absolute;
+            margin-left: -40px;
+         }
          */
       }).css
    },
@@ -3578,6 +3944,44 @@ vkopt['albums'] = {
          });
       }
       return items;
+   },
+   onResponseAnswer: function(answer, url, q){
+      if (
+         url == 'wkview.php' && q.act == 'show' &&
+         answer && answer[1] &&
+         !q.offset && q.w &&
+         /history.+_photo/.test(q.w)
+      ){
+         var listId = (answer[1].match(/showPhoto\([^,]+,\s*'(mail\d+)',/) || [])[1];
+         if (listId)
+            answer[1] = vkopt_core.mod_str_as_node(answer[1], function(node){
+               var item = geByClass1('ui_tab_sel', node);
+               item.setAttribute('onmouseover', "vkopt.albums.mail_photos_menu(this,'"+listId+"');");
+               addClass(item, 'vk_bottom_arrow');
+            });
+      }
+
+      if (
+         url == 'al_photos.php' && q.act == 'show_album' &&
+         q.album && !q.offset && answer && answer[3] && answer[3].summary
+      ){
+         var tmp = q.album.split('_');
+         answer[3].summary = vkopt_core.mod_str_as_node(answer[3].summary + '<div class="fl_r vk_pa_actions"><div class="vk_pa_actions_wrp"></div></div>', function(node){
+            vkopt.photos.album_actions(tmp[1], tmp[0], geByClass1('vk_pa_actions_wrp', node));
+         });
+      }
+   },
+   mail_photos_menu: function(node, listId){
+      var opts = {
+         appendToParent : true,
+         defaultSide : "bottom",
+         content: vk_lib.tpl_process(vkopt.photos.tpls['more_acts_item'], {
+                     onclick:    "return vkopt.albums.download(null,'"+listId+"');",
+                     text:       IDL('download')
+                  }),
+         autoShow : !0
+      };
+      new ElementTooltip(node, opts);
    },
    download: function(aid, oid){
       var album_name = (aid=='tag' || aid=='photos') ?  aid+oid : "album"+oid+"_"+aid;
@@ -3946,108 +4350,7 @@ vkopt['albums'] = {
 vkopt['audio'] =  {
    css: function(){
       var codes = vk_lib.get_block_comments(function(){
-      /*dl:
-      .audio_row .audio_acts .audio_act.vk_audio_dl_btn{
-         display:block;
-      }
-      .audio_row__action_get_link{
-         float: right;
-      }
-      .audio_row .audio_acts .audio_act.vk_audio_dl_btn>div,
-      .audio_row__action_get_link div{
-         background-image: url(/images/blog/about_icons.png);
-         width: 12px;
-         height: 14px;
-         background-position: 0px -309px;
-      }
-
-      .audio_row .audio_acts .audio_act.vk_audio_acts>div {
-         margin: 6px 0 0 6px;
-      }
-      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading>div,
-      .audio_row__action_get_link.dl_url_loading div{
-         opacity:0.3;
-         background: url(/images/upload_inv_mini.gif) no-repeat 0% 50%;
-         width: 17px;
-         margin-left: -2px;
-      }
-      .audio_row__action_get_link div,
-      .audio_row__action_get_link.dl_url_loading div{
-         margin: 5px auto;
-      }
-
-      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_acts{
-         display:block;
-      }
-      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_acts>div {
-         background: url(/images/icons/profile_dots.png) no-repeat 0 5px;
-         height: 13px;
-         width: 18px;
-      }
-
-      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_dl_btn.vk_audio_acts>div{
-         background: url(/images/icons/profile_dots.png) no-repeat 0 5px;
-         height: 13px;
-         width: 18px;
-         transition: none;
-      }
-      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_dl_btn.vk_audio_acts:hover>div{
-         background-image: url(/images/blog/about_icons.png);
-         width: 12px;
-         height: 14px;
-         margin-left:3px;
-         margin-right:3px;
-         background-position: 0px -309px;
-      }
-      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading>div,
-      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading:hover>div{
-         opacity:0.3;
-         background: url(/images/upload_inv_mini.gif) no-repeat 0% 50%;
-         width: 18px;
-      }
-
-      .audio_duration_wrap.vk_with_au_info .audio_duration{
-         display: inline;
-      }
-
-      .audio_row.vk_info_loaded .vk_audio_size_info_wrap,
-      ._vk_size_info_on_ctrl .ctrl_key_pressed .audio_row.vk_info_loaded .vk_audio_size_info_wrap,
-      ._vk_size_info_on_ctrl .audio_hq_label_show .audio_row.vk_info_loaded .vk_audio_size_info_wrap{
-         display: table;
-      }
-
-      .vk_audio_size_info_wrap,
-      .narrow_column .audios_module .vk_audio_size_info_wrap,
-      .audio_row:hover .vk_audio_size_info_wrap,
-      ._vk_size_info_on_ctrl .audio_row .vk_audio_size_info_wrap,
-      ._vk_size_info_on_ctrl .audio_hq_label_show .audio_row:hover .vk_audio_size_info_wrap,
-      ._vk_size_info_on_ctrl .audio_row:hover .vk_audio_size_info_wrap
-      {
-         display: none;
-      }
-      .vk_audio_size_info_wrap span{
-         display: block;
-      }
-      .vk_audio_size_info_wrap{
-         line-height: 10px;
-         margin-right: 3px;
-         margin-top: 12px;
-         height: 18px;
-         float:right;
-         font-size: 10px;
-         color: #777;
-      }
-      .audio_w_covers .vk_audio_size_info_wrap{
-         margin-top: 15px;
-      }
-      .vk_audio_size_info{
-         display: table-cell;
-         vertical-align: middle;
-      }
-      .audio_row.vk_info_loaded .audio_row__info {margin-left: 30px;}
-      .wall_module .media_desc .vk_audio_size_info b {
-         background:none
-      }
+      /*css:
       .vk_audio_hq_label {
          display: inline-block;
          width: 15px;
@@ -4090,35 +4393,36 @@ vkopt['audio'] =  {
       .vk_audio_mod_info_visible .audios_module .audio_row__info._audio_row__info {
          display: block !important;
       }
+
+      .vk_play_next_btn {
+         display: inline-block;
+         cursor: pointer;
+         outline: none;
+         height: 24px;
+         width: 24px;
+         margin: 0 2px;
+         background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2248%22%20height%3D%2224%22%20viewBox%3D%220%200%2048%2024%22%3E%0A%20%20%20%20%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%0A%20%20%20%20%20%20%20%20%3Cg%20transform%3D%22translate(24)%22%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Crect%20width%3D%2224%22%20height%3D%2224%22%2F%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M5%2C11.5046844%20C5%2C11.2259549%205.22765279%2C11%205.50964952%2C11%20L15%2C11%20L15%2C13%20L5.50964952%2C13%20C5.22817786%2C13%205%2C12.785965%205%2C12.4953156%20L5%2C11.5046844%20Z%20M5%2C7.50468445%20C5%2C7.22595492%205.22563934%2C7%205.49374104%2C7%20L17.506259%2C7%20C17.7789446%2C7%2018%2C7.21403503%2018%2C7.50468445%20L18%2C8.49531555%20C18%2C8.77404508%2017.7743607%2C9%2017.506259%2C9%20L5.49374104%2C9%20C5.22105539%2C9%205%2C8.78596497%205%2C8.49531555%20L5%2C7.50468445%20Z%20M5%2C15.5046844%20C5%2C15.2259549%205.21505737%2C15%205.49047852%2C15%20L9%2C15%20L9%2C17%20L5.49047852%2C17%20C5.21959471%2C17%205%2C16.785965%205%2C16.4953156%20L5%2C15.5046844%20Z%22%2F%3E%0A%20%20%20%20%20%20%20%20%20%20%20%20%3Cpath%20fill%3D%22%23FFFFFF%22%20fill-rule%3D%22nonzero%22%20d%3D%22M12.7071068%2C15.2928932%20C12.3165825%2C14.9023689%2011.6834175%2C14.9023689%2011.2928932%2C15.2928932%20C10.9023689%2C15.6834175%2010.9023689%2C16.3165825%2011.2928932%2C16.7071068%20L13.2928932%2C18.7071068%20C13.6834175%2C19.0976311%2014.3165825%2C19.0976311%2014.7071068%2C18.7071068%20L21.7071068%2C11.7071068%20C22.0976311%2C11.3165825%2022.0976311%2C10.6834175%2021.7071068%2C10.2928932%20C21.3165825%2C9.90236893%2020.6834175%2C9.90236893%2020.2928932%2C10.2928932%20L14%2C16.5857864%20L12.7071068%2C15.2928932%20Z%22%2F%3E%0A%20%20%20%20%20%20%20%20%3C%2Fg%3E%0A%20%20%20%20%20%20%20%20%3Crect%20width%3D%2224%22%20height%3D%2224%22%2F%3E%0A%20%20%20%20%20%20%20%20%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M5%2C11.5046844%20C5%2C11.2259549%205.23290253%2C11%205.50342274%2C11%20L12%2C11%20L12%2C13%20L5.50342274%2C13%20C5.22539004%2C13%205%2C12.785965%205%2C12.4953156%20L5%2C11.5046844%20Z%20M5%2C7.50468445%20C5%2C7.22595492%205.22563934%2C7%205.49374104%2C7%20L17.506259%2C7%20C17.7789446%2C7%2018%2C7.21403503%2018%2C7.50468445%20L18%2C8.49531555%20C18%2C8.77404508%2017.7743607%2C9%2017.506259%2C9%20L5.49374104%2C9%20C5.22105539%2C9%205%2C8.78596497%205%2C8.49531555%20L5%2C7.50468445%20Z%20M5%2C15.5046844%20C5%2C15.2259549%205.23290253%2C15%205.50342274%2C15%20L12%2C15%20L12%2C17%20L5.50342274%2C17%20C5.22539004%2C17%205%2C16.785965%205%2C16.4953156%20L5%2C15.5046844%20Z%20M14.4145192%2C18.9225574%20C14.1855866%2C19.0785172%2014%2C18.9800332%2014%2C18.7041225%20L14%2C11.2969997%20C14%2C11.0204017%2014.1780482%2C10.9174696%2014.4145192%2C11.0785648%20L19.7570808%2C14.718171%20C19.9860135%2C14.8741308%2019.9935519%2C15.121856%2019.7570808%2C15.2829513%20L14.4145192%2C18.9225574%20Z%22%2F%3E%0A%20%20%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E");
+         transition: background-position 300ms ease, opacity 60ms linear;
+         opacity: 0.7;
+         padding: 0;
+      }
+      .vk_play_added_next_btn{
+         background-position: -24px 0
+      }
       */
       });
-      return codes.dl;
+      return codes.css;
    },
    tpls: {},
    onSettings:{
       Media:{
-         audio_dl: {
-            title: 'seLinkAu',
-            info: 'infoUseNetTrafic'
-         },
-         audio_size_info: {
-            title: 'seAudioSizeAuto',
-            info: 'infoUseNetTrafic',
-            sub: {
-               audio_wait_hover:{
-                  title: 'seAudioSizeHover'
-               },
-               /*
-               size_info_on_ctrl: {
-                  title: 'seAudioSizeShowOnCtrl',
-                  class_toggler: true
-               }
-               */
-            }
-         },
          audio_skip_button: {
             title: 'seAudioSkipButton',
             default_value: true
+         },
+         // заменяем кнопку расшаривания плейлиста на обложке на кнопку "воспроизвести следующим"
+         playlist_share_to_play_next:{
+            title: 'sePlsPlayNextBtn'
          }
       },
       Extra:{
@@ -4138,14 +4442,6 @@ vkopt['audio'] =  {
    },
    onInit: function(){
       vkopt.audio.tpls = vk_lib.get_block_comments(function(){
-      /*size_info:
-      <small class="vk_audio_size_info_wrap" id="vk_audio_size_info_{vals.id}">
-         <div class="vk_audio_size_info">
-            <span class="vk_audio_size">{vals.size}</span>
-            <span class="vk_audio_kbps">{vals.kbps}</span>
-         </div>
-      </small>
-      */
       /*wiki_code:
       <center>
          <input type="text" value="[[audio{vals.full_id}]]" readonly class="text" style="text-align: center;" onClick="this.focus();this.select();" size="30"/>
@@ -4160,27 +4456,52 @@ vkopt['audio'] =  {
          <a href="/audio?id=-{vals.gid}&audio_id={vals.id}">{vals.id} ({vals.performer} - {vals.title})</a>
       </b>
       <br>
-      {vals:aid} -> club{vals:gid}
+      {vals.aid} -> club{vals.gid}
+      */
+      /*pls_play_next:
+      <div class="audio_pl__actions_btn vk_play_next_btn" onclick="vkopt.audio.playlists.play_next(this, {vals.ownerId}, {vals.albumId}, '{vals.accessHash}', '{vals.source}'); return cancelEvent(event)"></div>
       */
       });
-      vkopt.audio.load_sizes_cache();
-      vkbrowser.mozilla && vkopt.permissions.update();
    },
    onLibFiles: function(fn){
-      if (fn = 'audioplayer.js'){
+      if (fn == 'audioplayer.js'){
          Inj.Start('AudioUtils.onRowOver', vkopt.audio.acts.buttons);
          Inj.End('AudioUtils.onRowLeave', function(){
             clearTimeout(vkopt.audio.__onrowover);
          });
       }
    },
-   remove_trash:function(s){
-      s=vkRemoveTrash(s,'%'); // удаление символов не являющихся буквами/иероглифами/и т.д
-      // Удаление лишних дефисов в названиях и приведение их к одному виду
-      s=s.replace(/\[\s*\]|\(\s*\)|\{\s*\}/g,'');
-      s=s.replace(/[\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+/g,'\u2013').replace(/\u2013\s*\u2013/g,'\u2013');
-      s=s.replace(/[\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+$/,'');// ^[\s\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+
-      return s;
+   processNode: function(node, params){
+      vkopt.audio.playlists.replace_share(node);
+   },
+   playlists: {
+      play_next: function(el, ownerId, albumId, accessHash, source){
+         el && addClass(el, 'vk_play_added_next_btn');
+         getAudioPlayer().playNextPlaylist(ownerId, albumId, accessHash, source);
+      },
+      replace_share: function(node){
+         if (!vkopt.settings.get('playlist_share_to_play_next')) return;
+         var nodes = geByClass('audio_pl__actions_share');
+
+         var rx = /\((-?\d+),\s*(\d+),\s*['"]([a-f0-9]*?)['"],\s*['"]([^'"<>]*?)['"].*?\)/i;
+
+         for (var i = 0; i < nodes.length; i++){
+            var el = nodes[i];
+            var p = gpeByClass('audio_pl__cover', el);
+            if (!p || geByClass1('vk_play_next_btn', p)) continue;
+            var info = p.getAttribute('onclick').match(rx);
+            if (!info) continue;
+            var play_next = se(vk_lib.tpl_process(vkopt.audio.tpls['pls_play_next'], {
+                   ownerId: info[1],
+                   albumId: info[2],
+                   accessHash: info[3],
+                   source: info[4]
+            }));
+            hide(el);
+            el.parentNode.insertBefore(play_next, el);
+         }
+
+      }
    },
    share: function(audio_fullId){
       showBox("like.php", {
@@ -4254,8 +4575,9 @@ vkopt['audio'] =  {
             </div><br>';
             html+='<h4>'+IDL('SelectGroup')+'</h4>';
             for (var i=0; i<vkopt.audio._adm_gr.length;i++){
-               html+='<a href="/'+vkopt.audio._adm_gr[i].screen_name+'" onclick="return vkopt.audio.add_to_group('+oid+','+aid+','+vkopt.audio._adm_gr[i].gid+');">'+vkopt.audio._adm_gr[i].name+'</a><br>';
+               html+='<a href="/'+vkopt.audio._adm_gr[i].screen_name+'" onclick="return vkopt.audio.add_to_group('+oid+','+aid+','+vkopt.audio._adm_gr[i].id+');">'+vkopt.audio._adm_gr[i].name+'</a><br>';
             }
+
             vkopt.audio._add_box=vkAlertBox(IDL('Add'),html);
             var btn=ge('aidtogroup');
             var old_val=localStorage['vk_aid_to_group'];
@@ -4281,10 +4603,10 @@ vkopt['audio'] =  {
          };
 
          if (vkopt.audio._adm_gr==null){
-         dApi.call('groups.get',{extended:1,filter:'admin'},function(r){
+         dApi.call('groups.get',{extended:1,filter:'editor'},function(r){
             //console.log(r)
-            r.response.shift();
-            vkopt.audio._adm_gr=r.response;
+            //r.response.shift();
+            vkopt.audio._adm_gr=r.response.items;
             show_box();
             });
          } else {
@@ -4292,328 +4614,6 @@ vkopt['audio'] =  {
          }
 
       return false;
-   },
-   download_file: function(el){
-     var result = true;
-     if (el.hasAttribute('url_ready'))
-        result = vkopt.permissions.check_dl_url(el, el.href);
-     if (result) result = vkDownloadFile(el);
-     return result;
-   },
-   check_dl_url: function(el){   // если на странице не было ссылок на аудио, то при наведении на кнопку загрузки ждём их появления в кэше.
-      if (el.getAttribute('href') == ''){
-         addClass(el,'dl_url_loading');
-         var id = el.dataset["aid"];
-         var req_id = el.dataset["reqaid"];
-         function wait_and_set_url(){
-            var info = vkopt.audio.__full_audio_info_cache[id];
-            if (info){
-               var name = unclean(info.performer + ' - ' + info.title);
-               if (vkopt.settings.get('audio_clean_titles'))
-                  name = vkopt.audio.remove_trash(name);
-
-               var name = vkCleanFileName(name);
-               var url = vkopt.audio.make_dl_url(info.url, name);
-               el.setAttribute('download', name+'.mp3');
-               el.setAttribute('href', url);
-               el.setAttribute('url_ready','1');
-               removeClass(el,'dl_url_loading');
-               //vkopt.permissions.request_on_click(el, url, vkopt.log);
-               vkopt.audio.load_size_info(info.fullId, info.url);
-            } else {
-               setTimeout(function(){
-                  wait_and_set_url();
-               },300);
-            }
-         }
-         wait_and_set_url();
-         if (vkopt.settings.get('audio_wait_hover')){
-            var info = vkopt.audio.__full_audio_info_cache[id];
-            // если не в загруженной инфе и очередях загрузки
-            var hq = vkopt.audio.__hover_load_queue;
-            if (!info && vkopt.audio.__loading_queue.indexOf(req_id) == -1 &&  vkopt.audio.__load_queue.indexOf(req_id) == -1){
-               var idx = hq.indexOf(req_id);
-               if (idx == -1){ // не знаю возможно ли, но лучше добавлю проверку.
-                  hq.push(req_id);
-                  idx = hq.length - 1;
-               }
-               var start = Math.max(0, idx - 2);
-               var end = Math.min(start + 5, hq.length) - start;
-               var to_load = hq.splice(start, end);
-               vkopt.audio.__load_queue = vkopt.audio.__load_queue.concat(to_load);
-               vkopt.audio.load_audio_urls(); // запускаем процесс загрузки инфы об аудио из очереди
-            }
-         }
-      }
-   },
-   make_dl_url: function(url, name){
-      name = vkCleanFileName(name);
-      /*
-      // фикс-костыль, т.к для https://*.vk-cdn.net нет разрешений в манифесте.
-      // если исправить в манифесте, то после обновления расширения, оно отключится у всех пользователей хрома)
-      //url = vkopt.audio.decode_url(url);
-      if (/^https:.+\.vk-cdn\.net\//i.test(url))
-         url = url.replace(/^https:/,'http:');
-      */
-      return url + '#FILENAME/' + vkEncodeFileName(name) + '.mp3';
-   },
-   processNode: function(node, params){
-      if (!vkopt.settings.get('audio_dl')) return;
-      if (!vkopt.audio.__full_audio_info_cache)
-         vkopt.audio.__full_audio_info_cache = {};
-      var cache = vkopt.audio.__full_audio_info_cache;
-
-      var audios = geByClass('audio_row',node);
-      if (!audios.length && hasClass(node, 'audio_row')) // если вызов из AutoList.prototype._drawRows, то на входе уже элемент audio_row
-         audios = [node];
-
-      for (var i = 0; i < audios.length; i++){
-         var row = audios[i];
-         var dur = geByClass1('audio_row__info', row);
-         var info = null;
-         try {
-            info = JSON.parse(row.dataset["audio"]);
-         } catch(e) {}
-         if (!info) continue;
-         var info_obj = AudioUtils.asObject(info);
-         if (info_obj.url==""){                    // собираем очередь из аудио, которым требуется подгрузка инфы
-            if (cache[info_obj.fullId])
-               info_obj = cache[info_obj.fullId];
-            else {
-               var queue = vkopt.settings.get('audio_wait_hover') ? vkopt.audio.__hover_load_queue : vkopt.audio.__load_queue;
-               var full_id_req = info_obj.fullId  + "_" + info_obj.actionHash + "_" + info_obj.urlHash;
-               if (queue.indexOf(full_id_req) == -1 && vkopt.audio.__loading_queue.indexOf(full_id_req) == -1)
-                  queue.push(full_id_req);
-            }
-         }
-
-         if (info_obj.url)
-            info_obj.url = vkopt.audio.decode_url(info_obj.url);
-
-         //var name = unclean(info[4]+' - '+info[3]).replace(/<em>|<\/em>/g, ''); // зачищаем от тегов.
-         //name = vkCleanFileName(name);
-
-         var size = vkopt.audio._sizes_cache[info_obj.fullId];
-         var sz_labels = size ? vkopt.audio.size_to_bitrare(size, info_obj.duration) : {};
-         if (size){
-            row.dataset['kbps'] = sz_labels.kbps_raw;
-            row.dataset['filesize'] = size;
-            addClass(row, 'vk_info_loaded');
-         }
-
-         var sz_info = se(vk_lib.tpl_process(vkopt.audio.tpls['size_info'], {
-               id: info_obj.fullId,
-               url: info_obj.url || '',
-               size: sz_labels.size || '? Mb',
-               kbps: sz_labels.kbps || '? Kbps'
-            }));
-
-         // Инфа о размере/битрейте
-         if (vkopt.settings.get('audio_size_info')){
-            if (!vkopt.settings.get('audio_wait_hover') && info_obj.url)
-               vkopt_core.timeout( //setTimeout
-                  (function(id, url){
-                     return function(){
-                        vkopt.audio.load_size_info(id, url);
-                     }
-                  })(info_obj.fullId, info_obj.url),
-                  200
-               );
-
-            if (dur && !hasClass('vk_with_au_info',dur.parentNode)){
-               dur.parentNode.insertBefore(sz_info, dur);
-               addClass(dur.parentNode, 'vk_with_au_info');
-            }
-         }
-      }
-
-      // TODO: грузить инфу только при наведении на иконку меню/скачивания
-      if (!vkopt.settings.get('audio_wait_hover') && (vkopt.settings.get('audio_size_info') || vkopt.settings.get('audio_dl'))) // URL'ы нужны только для этих опций
-         vkopt.audio.load_audio_urls(); // запускаем процесс загрузки инфы об аудио из очереди
-   },
-   _sizes_cache: {}, // надо бы его загонять в локальное хранилище, но например кэш размеров со списка в ~500 аудио занимает около 10кб. т.е его нужно будет как-то по умному чистить.
-   info_thread_count: 0,
-   save_sizes_cache:function(){
-      clearTimeout(vkopt.audio._save_size_cache);
-      vkopt.audio._save_size_cache = setTimeout(function(){
-         var cache = vkopt.audio._sizes_cache;
-         var len = 0;
-         var max_items = vkopt_defaults.config.MAX_CACHE_AUDIO_SIZE_ITEMS;
-         for (var key in cache) len++;
-         if (len > max_items){
-            var new_cache = {};
-            var i = 0;
-            for (var key in cache){
-               i++;
-               if (i > len - max_items)
-                  new_cache[key] = cache[key];
-            }
-            cache = new_cache;
-         }
-         localStorage['vkopt_audio_sizes_cache'] = JSON.stringify(cache);
-      },1500);
-   },
-   load_sizes_cache:function(){
-      var sz_cache = {};
-      try{
-         sz_cache = JSON.parse(localStorage['vkopt_audio_sizes_cache'] || '{}');
-      } catch(e){}
-      vkopt.audio._sizes_cache = sz_cache;
-   },
-   clear_sizes_cache:function(){
-      localStorage['vkopt_audio_sizes_cache'] = '{}';
-   },
-   size_to_bitrare: function(size, duration){
-      var kbit = size / 128;
-      var kbps = Math.ceil(Math.round(kbit/duration)/16)*16;
-      return {
-         size: vkFileSize(size, 1).replace(/([\d\.]+)/,'<b>$1</b>'),
-         kbps: (kbps > 0 ? '<b>' + kbps + '</b> Kbps' : ''),
-         kbps_raw: kbps
-      }
-   },
-   load_size_info: function(id, url){
-      if (vkopt.audio.info_thread_count >= vkopt_defaults.config.AUDIO_INFO_LOAD_THREADS_COUNT){
-         var t = setInterval(function(){
-            if (vkopt.audio.info_thread_count < vkopt_defaults.config.AUDIO_INFO_LOAD_THREADS_COUNT){
-               clearInterval(t);
-               vkopt.audio.load_size_info(id, url);
-            }
-         },50);
-         return;
-      }
-      if (!vkopt.settings.get('audio_size_info')) return;
-
-      var size = vkopt.audio._sizes_cache[id];
-      var rb = true;
-      var WAIT_TIME = 4000;
-      var els = geByClass('_audio_row_' + id);
-      var set_size_info = function(size){
-         for (var i = 0; i < els.length; i++){
-            var el = els[i];
-            var info = AudioUtils.asObject(AudioUtils.getAudioFromEl(el));
-            var size_el = geByClass1('vk_audio_size', el);
-            var kbps_el = geByClass1('vk_audio_kbps', el);
-
-            var sz_info = vkopt.audio.size_to_bitrare(size, info.duration);
-            val(size_el, sz_info.size);
-            val(kbps_el, sz_info.kbps);
-
-            el.dataset['kbps'] = sz_info.kbps_raw;
-            el.dataset['filesize'] = size;
-            addClass(el, 'vk_info_loaded');
-
-            if (!vkopt.audio._sizes_cache[id]){
-               if (sz_info.kbps_raw > 120){
-                  vkopt.audio._sizes_cache[id] = size;
-                  vkopt.audio.save_sizes_cache();
-               } else {
-                  vkopt.audio._sizes_cache[id] = false;
-                  vkopt.audio.save_sizes_cache();
-               }
-            }
-            return sz_info.kbps_raw > 120;
-         }
-      };
-      var need_load = true;
-      if (size)
-         need_load = !set_size_info(size);
-
-      if (need_load && els.length){
-         var reset=setTimeout(function(){
-            vkopt.audio.info_thread_count--;
-            rb = false;
-         }, WAIT_TIME);
-         vkopt.audio.info_thread_count++;
-         XFR.post(url, {}, function(h, size){
-            clearTimeout(reset);
-            vkopt.log('get_size response:', id, size, h);
-            if (rb){
-               vkopt.audio.info_thread_count--;
-            }
-            if (size > 0){
-               set_size_info(size);
-            } else {
-               // TODO: видать ссылка протухла. нужно подгрузить актуальный URL и снова запросить размер
-            }
-         }, true);
-      }
-   },
-   __load_queue:[], // очередь загрузки инфы
-   __hover_load_queue:[], // очередь, из которой будут аудио перемещаться в __load_queue, при наведении на иконку загрузки.
-   __loading_queue:[], // очередь текущих аудио, по которым в данный момент грузится инфа
-   __load_req_num: 1,
-   __full_audio_info_cache: {},
-   decode_url: function(url){
-      var tmp = {};
-      AudioPlayerHTML5.prototype._setAudioNodeUrl(tmp, url);
-      return tmp.src
-   },
-   load_audio_urls: function(){
-      if (vkopt.audio.__load_queue.length == 0 || vkopt.audio.__loading_queue.length > 0) // если нет списка на подгрузку, или что-то уже грузится - игнорим вызов
-         return;
-
-      vkopt.audio.__loading_queue = vkopt.audio.__load_queue.splice(0,Math.min(vkopt.audio.__load_queue.length, vkRandomRange(5,10))); // больше 10 аудио не принимает.
-      var load_info = function(){
-         //TODO: удаление из __load_queue отсутствущих на странице аудио
-
-         ajax.post("al_audio.php", {
-            act : "reload_audio",
-            ids :  vkopt.audio.__loading_queue.join(",")
-         }, {
-            onDone : function (data) {
-               if (!data){ // вероятно косяк с детектом множества однотипных действий
-                  console.log('Load audio info failed:', vkopt.audio.__load_req_num, vkopt.audio.__loading_queue.join(","));
-                  setTimeout(function(){
-                     console.log('try load again');
-                     load_info();
-                  }, 10000);
-               } else {
-                  //console.log('on done:', vkopt.audio.__load_req_num, data);
-                  vkopt.audio.__loading_queue = [];
-                  each(data, function (i, info) {
-
-                     info = AudioUtils.asObject(info);
-                     if (info.url)
-                        info.url = vkopt.audio.decode_url(info.url);
-
-                     vkopt.audio.__full_audio_info_cache[info.fullId] = info;
-                     if (info.url)
-                        vkopt.audio.load_size_info(info.fullId, info.url);
-                  });
-                  if (vkopt.audio.__load_queue.length > 0) // если в очереди есть аудио - продолжаем грузить
-                     vkopt.audio.load_audio_urls();
-               }
-            }
-         });
-         vkopt.audio.__load_req_num++;
-      };
-
-      clearTimeout(vkopt.audio.__load_delay); // за короткий промежуток времени аудио могло появиться в разных местах. чуть ждём пока устаканится список.
-      vkopt.audio.__load_delay = setTimeout(
-         function(){
-            load_info();
-         },
-         vkopt.audio.__load_req_num %20 == 0 ? 3500 : 350 // попытка избежать тетекта однотипных действий
-      );
-   },
-   load_all: function(callback){ // пока не используется. добавлено чтоб не забыть о таком способе получения ссылок (в новом вк нет упоминаний об этом методе).
-      var query = {
-         act : 'load_audios_silent',
-         id : (cur.allAudiosIndex == 'all' ? cur.id : cur.audioFriend),
-         gid : cur.gid,
-         claim : nav.objLoc.claim,  // Для silent-подгрузки похоже не работает ни на старой, ни на новой версии вк.
-                                    // На старой версии по URL https://vk.com/audio?claim=1 показываются только те заблоченные, что попадают в видимый без подгрузки список.
-         please_dont_ddos : 2
-      };
-      if (cur.club)
-         query.club = cur.club;
-
-      ajax.post('/al_audio.php', query, {
-         onDone : (function (data, opts) {
-            callback(data)
-         })
-      });
    },
    onAudioRowItems: function(audioEl, audioObject, audio){
       var ap = getAudioPlayer();
@@ -4639,29 +4639,6 @@ vkopt['audio'] =  {
                ''//custom_attributes
             ]
          ]
-      }
-      if (vkopt.settings.get('audio_dl')){
-         items.actions.push([
-            'get_link',
-            function(audioEl, audioObject, audio){
-               vkopt.log(arguments);
-               var filename=vkCleanFileName(unclean(audioObject.performer+' - '+audioObject.title));
-               var dl_btn = geByClass1('_audio_row__action_get_link', audioEl);
-               if (dl_btn.hasAttribute('url_ready')){
-                  var dlnk = se('<a href="'+dl_btn.href+'" download="'+filename+'.mp3" url_ready=1></a>');
-                  utilsNode.appendChild(dlnk);
-                  if (vkopt.audio.download_file(dlnk))
-                     dlnk.click();
-                  setTimeout(function(){
-                     re(dlnk);
-                  },200);
-               }
-               return true;
-            },
-            '<div></div>',// button content
-            'data-aid="{vals.fullId}" data-reqaid="{vals.fullId}_{vals.actionHash}_{vals.urlHash}" id="vk_get_link_{vals.fullId}" href="" onmouseover="vkopt.audio.check_dl_url(this);"',//custom_attributes
-            'a'
-         ]);
       }
       if (vkopt.settings.get('audio_skip_button') && gpeByClass('audio_section__current', audioEl)){ // для текущего плейлиста кнопку "воспроизветси следующей" зажали.
          // исправляем это поведение
@@ -4830,6 +4807,868 @@ vkopt['audio'] =  {
    }
 };
 
+vkopt['audl'] = {
+   css: function(){
+      var codes = vk_lib.get_block_comments(function(){
+      /*dl:
+      .audio_row .audio_acts .audio_act.vk_audio_dl_btn{
+         display:block;
+      }
+      .audio_row__action_get_link{
+         float: right;
+      }
+      .audio_row .audio_acts .audio_act.vk_audio_dl_btn>div,
+      .audio_row__action_get_link div{
+         background-image: url(/images/blog/about_icons.png);
+         width: 12px;
+         height: 14px;
+         background-position: 0px -309px;
+      }
+
+      .audio_row .audio_acts .audio_act.vk_audio_acts>div {
+         margin: 6px 0 0 6px;
+      }
+      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading>div,
+      .audio_row__action_get_link.dl_url_loading div{
+         opacity:0.3;
+         background: url(/images/upload_inv_mini.gif) no-repeat 0% 50%;
+         width: 17px;
+         margin-left: -2px;
+      }
+      .audio_row__action_get_link div,
+      .audio_row__action_get_link.dl_url_loading div{
+         margin: 5px auto;
+      }
+
+      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_acts{
+         display:block;
+      }
+      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_acts>div {
+         background: url(/images/icons/profile_dots.png) no-repeat 0 5px;
+         height: 13px;
+         width: 18px;
+      }
+
+      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_dl_btn.vk_audio_acts>div{
+         background: url(/images/icons/profile_dots.png) no-repeat 0 5px;
+         height: 13px;
+         width: 18px;
+         transition: none;
+      }
+      .vk_audio_icon_dots .audio_row .audio_acts .audio_act.vk_audio_dl_btn.vk_audio_acts:hover>div{
+         background-image: url(/images/blog/about_icons.png);
+         width: 12px;
+         height: 14px;
+         margin-left:3px;
+         margin-right:3px;
+         background-position: 0px -309px;
+      }
+      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading>div,
+      .audio_row .audio_acts .audio_act.vk_audio_dl_btn.dl_url_loading:hover>div{
+         opacity:0.3;
+         background: url(/images/upload_inv_mini.gif) no-repeat 0% 50%;
+         width: 18px;
+      }
+
+      .audio_duration_wrap.vk_with_au_info .audio_duration{
+         display: inline;
+      }
+
+      .audio_row.vk_info_loaded .vk_audio_size_info_wrap{
+         display: table;
+      }
+
+      .vk_audio_size_info_wrap,
+      .narrow_column .audios_module .vk_audio_size_info_wrap,
+      .audio_row:hover .vk_audio_size_info_wrap
+      {
+         display: none;
+      }
+      .vk_audio_size_info_wrap span{
+         display: block;
+      }
+      .vk_audio_size_info_wrap{
+         line-height: 10px;
+         margin-right: 3px;
+         margin-top: 12px;
+         height: 18px;
+         float:right;
+         font-size: 10px;
+         color: #777;
+      }
+      .audio_w_covers .vk_audio_size_info_wrap{
+         margin-top: 15px;
+      }
+      .vk_audio_size_info{
+         display: table-cell;
+         vertical-align: middle;
+      }
+      .audio_row.vk_info_loaded .audio_row__info {margin-left: 30px;}
+      .wall_module .media_desc .vk_audio_size_info b {
+         background:none
+      }
+      */
+      });
+      return codes.dl;
+   },
+   tpls: {},
+   onSettings:{
+      Media:{
+         audio_dl: {
+            title: 'seLinkAu',
+            info: 'infoUseNetTrafic'
+         },
+         audio_size_info: {
+            title: 'seAudioSizeAuto',
+            info: 'infoUseNetTrafic',
+            sub: {
+               audio_wait_hover:{
+                  title: 'seAudioSizeHover'
+               }
+            }
+         }
+      },
+      Extra:{
+         mp3u8:{default_value:true}
+      }
+   },
+   onInit: function(){
+      vkopt.audl.tpls = vk_lib.get_block_comments(function(){
+      /*size_info:
+      <small class="vk_audio_size_info_wrap" id="vk_audio_size_info_{vals.id}">
+         <div class="vk_audio_size_info">
+            <span class="vk_audio_size">{vals.size}</span>
+            <span class="vk_audio_kbps">{vals.kbps}</span>
+         </div>
+      </small>
+      */
+      });
+      vkopt.audl.load_sizes_cache();
+      vk_ext_api.browsers && vk_ext_api.browsers.webext && vkopt.permissions.update();
+   },
+   onLibFiles: function(fn){
+      if (fn == 'audioplayer.js'){
+         var pl = window.getAudioPlayer && getAudioPlayer();
+         if (pl && pl._impl && Object.getPrototypeOf(pl._impl)._isHlsUrl)
+         Inj.Start('Object.getPrototypeOf(getAudioPlayer()._impl)._isHlsUrl', function(url,obj){
+            if (obj && obj.get_url)
+               obj.url = url;
+         });
+
+         Inj.End('AudioUtils.drawAudio', function(state){
+           var obj = this;
+           if (obj.result) {
+              obj.return_result = vkopt_core.mod_str_as_node(obj.result, vkopt_core.plugins.process_node, {source:"drawAudio", state: state});
+              obj.prevent_all = true;
+           }
+         })
+      }
+   },
+   onAudioRowItems: function(audioEl, audioObject, audio){
+      var items = {actions:[]};
+      if (vkopt.settings.get('audio_dl')){
+         items.actions.push([
+            'get_link',
+            function(audioEl, audioObject, audio){
+               vkopt.log(arguments);
+               var filename=vkCleanFileName(unclean(audioObject.performer+' - '+audioObject.title));
+               var dl_btn = geByClass1('_audio_row__action_get_link', audioEl);
+               if (dl_btn.hasAttribute('url_ready')){
+                  if (dl_btn.dataset["m3u8"]){
+                     vkopt.hls.download(
+                        dl_btn.dataset["m3u8"],
+                        dl_btn.getAttribute('download'),
+                        dl_btn.dataset["aid"]
+                     );
+                     return false;
+                  }
+
+                  var dlnk = se('<a href="'+dl_btn.href+'" download="'+filename+'.mp3" url_ready=1></a>');
+                  utilsNode.appendChild(dlnk);
+                  if (vkopt.audl.download_file(dlnk))
+                     dlnk.click();
+                  setTimeout(function(){
+                     re(dlnk);
+                  },200);
+               }
+               return true;
+            },
+            '<div></div>',// button content
+            'data-aid="{vals.fullId}" data-urlhash="{vals.urlHash}" data-reqaid="{vals.fullId}_{vals.actionHash}_{vals.urlHash}" id="vk_get_link_{vals.fullId}" href="" onmouseover="vkopt.audl.check_dl_url(this);"',//custom_attributes
+            'a'
+         ]);
+      }
+      return items;
+   },
+   insertSizeInfoWrap: function(row, vals){
+      var dur = geByClass1('audio_row__info', row);
+      var sz_info = se(vk_lib.tpl_process(vkopt.audl.tpls['size_info'], vals));
+      if (dur && !hasClass('vk_with_au_info',dur.parentNode)){
+         dur.parentNode.insertBefore(sz_info, dur);
+         addClass(dur.parentNode, 'vk_with_au_info');
+      }
+      return sz_info;
+   },
+   processNode: function(node, params){
+      if (!vkopt.settings.get('audio_dl')) return;
+      if (!vkopt.audl.__full_audio_info_cache)
+         vkopt.audl.__full_audio_info_cache = {};
+      var cache = vkopt.audl.__full_audio_info_cache;
+
+      var audios = geByClass('audio_row',node);
+      if (!audios.length && hasClass(node, 'audio_row')) // если вызов из AutoList.prototype._drawRows, то на входе уже элемент audio_row
+         audios = [node];
+
+      for (var i = 0; i < audios.length; i++){
+         var row = audios[i];
+         var info = null;
+         try {
+            info = JSON.parse(row.dataset["audio"]);
+         } catch(e) {}
+         if (!info) continue;
+         var info_obj = AudioUtils.asObject(info);
+         if (info_obj.url==""){                    // собираем очередь из аудио, которым требуется подгрузка инфы
+            if (cache[info_obj.fullId])
+               info_obj = cache[info_obj.fullId];
+            else {
+               var queue = vkopt.settings.get('audio_wait_hover') ? vkopt.audl.__hover_load_queue : vkopt.audl.__load_queue;
+               var full_id_req = info_obj.fullId  + "_" + info_obj.actionHash + "_" + info_obj.urlHash;
+               if (info_obj.urlHash && queue.indexOf(full_id_req) == -1 && vkopt.audl.__loading_queue.indexOf(full_id_req) == -1)
+                  queue.push(full_id_req);
+            }
+         }
+
+         if (info_obj.url)
+            info_obj.url = vkopt.audl.decode_url(info_obj.url);
+
+         //var name = unclean(info[4]+' - '+info[3]).replace(/<em>|<\/em>/g, ''); // зачищаем от тегов.
+         //name = vkCleanFileName(name);
+
+         var size = vkopt.audl._sizes_cache[info_obj.fullId];
+         var sz_labels = size ? vkopt.audl.size_to_bitrare(size, info_obj.duration) : {};
+         if (size){
+            row.dataset['kbps'] = sz_labels.kbps_raw;
+            row.dataset['filesize'] = size;
+            addClass(row, 'vk_info_loaded');
+         }
+
+         // Инфа о размере/битрейте
+         if (vkopt.settings.get('audio_size_info')){
+            if (!vkopt.settings.get('audio_wait_hover') && info_obj.url)
+               vkopt_core.timeout( //setTimeout
+                  (function(id, url){
+                     return function(){
+                        vkopt.audl.load_size_info(id, url);
+                     }
+                  })(info_obj.fullId, info_obj.url),
+                  200
+               );
+
+            vkopt.audl.insertSizeInfoWrap(row, {
+               id: info_obj.fullId,
+               url: info_obj.url || '',
+               size: sz_labels.size || '? Mb',
+               kbps: sz_labels.kbps || '? Kbps'
+            });
+         }
+      }
+
+      // TODO: грузить инфу только при наведении на иконку меню/скачивания
+      if (!vkopt.settings.get('audio_wait_hover') && (vkopt.settings.get('audio_size_info') || vkopt.settings.get('audio_dl'))) // URL'ы нужны только для этих опций
+         vkopt.audl.load_audio_urls(); // запускаем процесс загрузки инфы об аудио из очереди
+   },
+
+   download_file: function(el){
+     var result = true;
+     if (el.hasAttribute('url_ready'))
+        result = vkopt.permissions.check_dl_url(el, el.href);
+     if (result) result = vkDownloadFile(el);
+     return result;
+   },
+   check_dl_url: function(el){   // если на странице не было ссылок на аудио, то при наведении на кнопку загрузки ждём их появления в кэше.
+      if (el.getAttribute('href') == '' && el.dataset["urlhash"]){
+         addClass(el,'dl_url_loading');
+         var id = el.dataset["aid"];
+         var req_id = el.dataset["reqaid"];
+         function wait_and_set_url(){
+            var info = vkopt.audl.__full_audio_info_cache[id];
+            if (info){
+               var name = unclean(info.performer + ' - ' + info.title);
+               if (vkopt.settings.get('audio_clean_titles'))
+                  name = vkopt.audio_clean_titles.remove_trash(name);
+
+               var name = vkCleanFileName(name);
+               var url = vkopt.audl.make_dl_url(info.url, name);
+
+               if (/\.m3u8/.test(info.url)){
+                  el.dataset["m3u8"] = info.url;
+               }
+
+               el.setAttribute('download', name+'.mp3');
+               el.setAttribute('href', url);
+               el.setAttribute('url_ready','1');
+               removeClass(el,'dl_url_loading');
+               //vkopt.permissions.request_on_click(el, url, vkopt.log);
+               vkopt.audl.load_size_info(info.fullId, info.url);
+            } else {
+               setTimeout(function(){
+                  wait_and_set_url();
+               },300);
+            }
+         }
+         wait_and_set_url();
+         if (vkopt.settings.get('audio_wait_hover')){
+            var info = vkopt.audl.__full_audio_info_cache[id];
+            // если не в загруженной инфе и очередях загрузки
+            var hq = vkopt.audl.__hover_load_queue;
+            if (!info && vkopt.audl.__loading_queue.indexOf(req_id) == -1 &&  vkopt.audl.__load_queue.indexOf(req_id) == -1){
+               var idx = hq.indexOf(req_id);
+               if (idx == -1){ // не знаю возможно ли, но лучше добавлю проверку.
+                  hq.push(req_id);
+                  idx = hq.length - 1;
+               }
+               var start = Math.max(0, idx - 2);
+               var end = Math.min(start + 5, hq.length) - start;
+               var to_load = hq.splice(start, end);
+               vkopt.audl.__load_queue = vkopt.audl.__load_queue.concat(to_load);
+               vkopt.audl.load_audio_urls(); // запускаем процесс загрузки инфы об аудио из очереди
+            }
+         }
+      }
+   },
+   make_dl_url: function(url, name){
+      name = vkCleanFileName(name);
+      /*
+      // фикс-костыль, т.к для https://*.vk-cdn.net нет разрешений в манифесте.
+      // если исправить в манифесте, то после обновления расширения, оно отключится у всех пользователей хрома)
+      //url = vkopt.audl.decode_url(url);
+      if (/^https:.+\.vk-cdn\.net\//i.test(url))
+         url = url.replace(/^https:/,'http:');
+      */
+      var ext =  /\.m3u8/.test(url) ? '.m3u8' : '.mp3';
+      return url + '#FILENAME/' + vkEncodeFileName(name) + ext;
+   },
+   _sizes_cache: {}, // надо бы его загонять в локальное хранилище, но например кэш размеров со списка в ~500 аудио занимает около 10кб. т.е его нужно будет как-то по умному чистить.
+   info_thread_count: 0,
+   save_sizes_cache:function(){
+      clearTimeout(vkopt.audl._save_size_cache);
+      vkopt.audl._save_size_cache = setTimeout(function(){
+         var cache = vkopt.audl._sizes_cache;
+         var len = 0;
+         var max_items = vkopt_defaults.config.MAX_CACHE_AUDIO_SIZE_ITEMS;
+         for (var key in cache) len++;
+         if (len > max_items){
+            var new_cache = {};
+            var i = 0;
+            for (var key in cache){
+               i++;
+               if (i > len - max_items)
+                  new_cache[key] = cache[key];
+            }
+            cache = new_cache;
+         }
+         localStorage['vkopt_audio_sizes_cache'] = JSON.stringify(cache);
+      },1500);
+   },
+   load_sizes_cache:function(){
+      var sz_cache = {};
+      try{
+         sz_cache = JSON.parse(localStorage['vkopt_audio_sizes_cache'] || '{}');
+      } catch(e){}
+      vkopt.audl._sizes_cache = sz_cache;
+   },
+   clear_sizes_cache:function(){
+      localStorage['vkopt_audio_sizes_cache'] = '{}';
+   },
+   size_to_bitrare: function(size, duration){
+      var kbit = size / 128;
+      var kbps = Math.ceil(Math.round(kbit/duration)/16)*16;
+      return {
+         size: vkFileSize(size, 1).replace(/([\d\.]+)/,'<b>$1</b>'),
+         kbps: (kbps > 0 ? '<b>' + kbps + '</b> Kbps' : ''),
+         kbps_raw: kbps
+      }
+   },
+   load_size_info: function(id, url){
+      if (vkopt.audl.info_thread_count >= vkopt_defaults.config.AUDIO_INFO_LOAD_THREADS_COUNT){
+         var t = setInterval(function(){
+            if (vkopt.audl.info_thread_count < vkopt_defaults.config.AUDIO_INFO_LOAD_THREADS_COUNT){
+               clearInterval(t);
+               vkopt.audl.load_size_info(id, url);
+            }
+         },50);
+         return;
+      }
+      if (!vkopt.settings.get('audio_size_info')) return;
+
+      var size = vkopt.audl._sizes_cache[id];
+      var custom_duration = 0;
+      var rb = true;
+      var WAIT_TIME = 4000;
+      var els = geByClass('_audio_row_' + id);
+      var set_size_info = function(size){
+         for (var i = 0; i < els.length; i++){
+            var el = els[i];
+            var info = AudioUtils.asObject(AudioUtils.getAudioFromEl(el));
+
+
+
+
+            if (custom_duration){
+               size = size/custom_duration*info.duration
+            }
+            var sz_info = vkopt.audl.size_to_bitrare(size, info.duration);
+
+            if (!geByClass1('vk_audio_size', el)){
+               vkopt.audl.insertSizeInfoWrap(el, {
+                  id: info.fullId,
+                  url: info.url || '',
+                  size: sz_info.size || '? Mb',
+                  kbps: sz_info.kbps || '? Kbps'
+               });
+            } else {
+               val(geByClass1('vk_audio_size', el), sz_info.size);
+               val(geByClass1('vk_audio_kbps', el), sz_info.kbps);
+            }
+
+            el.dataset['kbps'] = sz_info.kbps_raw;
+            el.dataset['filesize'] = size;
+            addClass(el, 'vk_info_loaded');
+
+            if (!vkopt.audl._sizes_cache[id]){
+               if (sz_info.kbps_raw > 120){
+                  vkopt.audl._sizes_cache[id] = size;
+                  vkopt.audl.save_sizes_cache();
+               } else {
+                  vkopt.audl._sizes_cache[id] = false;
+                  vkopt.audl.save_sizes_cache();
+               }
+            }
+            return sz_info.kbps_raw > 120;
+         }
+      };
+      var get_size = function(url){
+         var reset=setTimeout(function(){
+            vkopt.audl.info_thread_count--;
+            rb = false;
+         }, WAIT_TIME);
+         vkopt.audl.info_thread_count++;
+         XFR.post(url, {}, function(h, size){
+            clearTimeout(reset);
+            vkopt.log('get_size response:', id, size, h);
+            if (rb){
+               vkopt.audl.info_thread_count--;
+            }
+            if (size > 0){
+               set_size_info(size);
+            } else {
+               // TODO: видать ссылка протухла. нужно подгрузить актуальный URL и снова запросить размер
+            }
+         }, true);
+
+      }
+
+      var need_load = true;
+      if (size)
+         need_load = !set_size_info(size);
+
+      if (need_load && els.length){
+         if (/\.m3u8/.test(url)){
+            AjGet(url, function(r){
+               var base = url.split('?')[0].match(/.+\//)[0];
+               var info = [];
+               r.replace(/(?:#EXT-X-KEY:METHOD=([^\r\n]+)[\s\S]*?)?#EXTINF:(.+?),[\r\n]+(.+\.ts[^\r\n]+)/g,function(s,mtd,dur,lnk){
+                  if (!mtd || mtd=="NONE")
+                     info.push({method:mtd, duration:dur, link:base+lnk})
+               });
+               if (info.length){
+                  var ts = info[Math.floor(info.length/2)];
+                  custom_duration = parseFloat(ts.duration);
+                  get_size(ts.link);
+               }
+            })
+         } else {
+            get_size(url);
+         }
+      }
+   },
+   __load_queue:[], // очередь загрузки инфы
+   __hover_load_queue:[], // очередь, из которой будут аудио перемещаться в __load_queue, при наведении на иконку загрузки.
+   __loading_queue:[], // очередь текущих аудио, по которым в данный момент грузится инфа
+   __load_req_num: 1,
+   __full_audio_info_cache: {},
+   decode_url: function(url){
+      var n = function(){};
+      var tmp = {
+         removeAttribute: n,
+         setAttribute: n,
+         getAttribute: n,
+         setUrl: function(u) { 
+            tmp.src = u; 
+            return {than: n}; 
+         }
+      };
+      var orig = RegExp.prototype.test;
+      RegExp.prototype.test = function(){return false}
+      try{
+         var h5proto = Object.getPrototypeOf(getAudioPlayer()._impl);
+         var _currentAudioEl = h5proto._currentAudioEl;
+         h5proto._currentAudioEl = tmp;
+         h5proto.setUrl(url);
+         h5proto._currentAudioEl = _currentAudioEl;
+      }catch(e){}
+      RegExp.prototype.test = orig;
+      if (tmp.src && /\.m3u8/.test(tmp.src) && vkopt.settings.get('mp3u8'))
+         tmp.src = tmp.src.replace(/(\/p\d+\/)[a-f0-9]+\/([a-f0-9]+)\/index.m3u8/,'$1$2.mp3').replace(/(\/c\d+\/[a-z]\d+\/)[a-f0-9]+\/(audios\/[a-f0-9]+)\/index.m3u8/,"$1$2.mp3");
+      return tmp.src
+   },
+   load_audio_urls: function(){
+      if (vkopt.audl.__load_queue.length == 0 || vkopt.audl.__loading_queue.length > 0) // если нет списка на подгрузку, или что-то уже грузится - игнорим вызов
+         return;
+
+      vkopt.audl.__loading_queue = vkopt.audl.__load_queue.splice(0,Math.min(vkopt.audl.__load_queue.length, vkRandomRange(5,10))); // больше 10 аудио не принимает.
+      var load_info = function(){
+         //TODO: удаление из __load_queue отсутствущих на странице аудио
+
+         ajax.post("al_audio.php", {
+            act : "reload_audio",
+            ids :  vkopt.audl.__loading_queue.join(",")
+         }, {
+            onDone : function (data) {
+               if (!data){ // вероятно косяк с детектом множества однотипных действий
+                  console.log('Load audio info failed:', vkopt.audl.__load_req_num, vkopt.audl.__loading_queue.join(","));
+                  setTimeout(function(){
+                     console.log('try load again');
+                     load_info();
+                  }, 10000);
+               } else {
+                  //console.log('on done:', vkopt.audl.__load_req_num, data);
+                  vkopt.audl.__loading_queue = [];
+                  each(data, function (i, info) {
+
+                     info = AudioUtils.asObject(info);
+                     if (info.url)
+                        info.url = vkopt.audl.decode_url(info.url);
+
+                     vkopt.audl.__full_audio_info_cache[info.fullId] = info;
+                     if (info.url)
+                        vkopt.audl.load_size_info(info.fullId, info.url);
+                  });
+                  if (vkopt.audl.__load_queue.length > 0) // если в очереди есть аудио - продолжаем грузить
+                     vkopt.audl.load_audio_urls();
+               }
+            }
+         });
+         vkopt.audl.__load_req_num++;
+      };
+
+      clearTimeout(vkopt.audl.__load_delay); // за короткий промежуток времени аудио могло появиться в разных местах. чуть ждём пока устаканится список.
+      vkopt.audl.__load_delay = setTimeout(
+         function(){
+            load_info();
+         },
+         vkopt.audl.__load_req_num %20 == 0 ? 3500 : 350 // попытка избежать тетекта однотипных действий
+      );
+   },
+   load_all: function(callback){ // пока не используется. добавлено чтоб не забыть о таком способе получения ссылок (в новом вк нет упоминаний об этом методе).
+      var query = {
+         act : 'load_audios_silent',
+         id : (cur.allAudiosIndex == 'all' ? cur.id : cur.audioFriend),
+         gid : cur.gid,
+         claim : nav.objLoc.claim,  // Для silent-подгрузки похоже не работает ни на старой, ни на новой версии вк.
+                                    // На старой версии по URL https://vk.com/audio?claim=1 показываются только те заблоченные, что попадают в видимый без подгрузки список.
+         please_dont_ddos : 2
+      };
+      if (cur.club)
+         query.club = cur.club;
+
+      ajax.post('/al_audio.php', query, {
+         onDone : (function (data, opts) {
+            callback(data)
+         })
+      });
+   }
+}
+
+vkopt['hls'] = {
+   css: function(){
+      return vk_lib.get_block_comments(function(){
+      /*css:
+         .vk_grab_progress {
+             height: 3px;
+             background: #6b96cf;
+             position: absolute;
+             bottom: 0px;
+             width: 50%;
+         }
+
+         .vk_grab_progress:before {
+             content: attr(data-progress)'%';
+             position: absolute;
+             right: 0px;
+             font-size: 10px;
+             margin-top: -5px;
+             background: #6b96cf;
+             padding: 1px 4px;
+             color: #FFF;
+             font-weight: bold;
+             border-radius: 4px;
+         }
+      */
+      }).css
+   },
+   grab: function(m3u8, opts){
+      var
+         onSegmentReady = opts.onSegmentReady || null,
+         onDone = opts.onDone || null,
+         onProgress = opts.onProgress || null;
+
+      var url_create = window.URL.createObjectURL;
+      var url_revoke = window.URL.revokeObjectURL;
+      window.URL.createGrabObjectURL = function(ms) {
+         if (ms instanceof MediaGrabSource){
+            vkopt.log('coURL ', ms);
+            ms.emit('sourceopen'); //new
+            return 'test://';
+         } else
+            return url_create(ms);
+      };
+      window.URL.revokeGrabObjectURL = function(ms) {
+         if (ms instanceof MediaGrabSource){
+            vkopt.log('roURL ', ms);
+            return true;
+         } else
+            return url_revoke(ms);
+      };
+
+      function HTML5MediaElement(){}
+      HTML5MediaElement.prototype = Object.create(EventEmitter.prototype)
+      var mel = new HTML5MediaElement();
+      extend(mel,{
+         addEventListener: mel.addListener,
+         pause: function() {
+            vkopt.log('Paused');
+            mel.emit('pause');
+            mel.emit('play');
+            return false;
+         },
+         preload: 'auto',
+         buffered: {},
+         duration: 1,
+         seeking: false,
+         height: 1080,
+         width: 1920,
+         loop: false,
+         played: {},
+         removeAttribute: function(attr){},
+         load: function(l){vkopt.log('Load:',this)},
+         canPlayType: function(codec){vkopt.log('Got asked about:'+codec); return 'probably'},
+         nodeName: 'audio',
+         playbackQuality: {},
+         getVideoPlaybackQuality: function() {return mel.playbackQuality},
+         addTextTrack: function(tt){vkopt.log('Adding textTrack ',tt); return [{}]},
+         textTracks: {
+            addEventListener: function(e,cb) {
+               vkopt.log('** Adding eventListener: '+e);
+            }
+         }
+      })
+
+      function SourceGrabBuffer(mimetype){
+            EventEmitter.call(this);
+            this._mimetype = mimetype;
+            return this;
+      }
+      SourceGrabBuffer.prototype =  Object.create(EventEmitter.prototype);
+      var sgb = SourceGrabBuffer.prototype;
+      sgb.addEventListener = function(eventName, callback) {
+         this.addListener(eventName, callback);
+         //vkopt.log('sgb addEventListener '+eventName);
+      }
+      sgb.appendBuffer = function(data) {
+         //vkopt.log('append: ', data.length, 'bytes ', this._mimetype);
+         var that = this;
+         onSegmentReady && onSegmentReady(data, this._mimetype);
+         setTimeout(function(){
+            that.emit('onupdateend');
+            that.emit('updateend');
+         },5);
+      }
+      Object.defineProperty(sgb, "buffered", {
+          get: function buffered() {
+               return [];
+          }
+      });
+      Object.defineProperty(sgb, "mode", {
+          get: function mode() {
+               return '';
+          }
+      });
+      SourceGrabBuffer.prototype.constructor = SourceGrabBuffer;
+
+      function MediaGrabSource(){
+         EventEmitter.call(this);
+         this.readyState = 'closed';
+         this._sb = {};
+         return this;
+      }
+      MediaGrabSource.prototype =  Object.create(EventEmitter.prototype);
+      var mgs = MediaGrabSource.prototype;
+      extend(mgs,{
+         addEventListener: function(eventName,callback) {
+            //vkopt.log('MediaGrabSource addEventListener: '+eventName);
+            this.addListener(eventName,callback);
+            this.readyState = 'open';
+            //vkopt.log(Object.keys(this._sb).length);
+            if (eventName == 'sourceopen') {
+               vkopt.log('Fired: '+eventName);
+               //this.emit(eventName,this);
+            }
+         },
+         removeEventListener: function(eventName,b) {
+            this.removeListener(eventName,b);
+         },
+         addSourceBuffer: function(mimetype) {
+            vkopt.log('MediaGrabSource new buffer for '+mimetype);
+            var nb = new SourceGrabBuffer(mimetype);
+            this._sb[mimetype] = nb;
+            return nb;
+         },
+         endOfStream: function(error) {
+            vkopt.log('** End of stream: '+error);
+            mel.emit('ended');
+            // onDone();
+         },
+         isTypeSupported: function(codec){return true}
+      });
+      Object.defineProperty(mgs, "sourceBuffers", {
+          get: function sourceBuffers() {
+               var a = [];
+               for (var sb in this._sb) {
+                  a.push(this._sb[sb]);
+               }
+               return a;
+          }
+      });
+      MediaGrabSource.isTypeSupported = function(codec){return true}
+
+      var get_module=function(js){
+         var exports = {};
+          eval(js);
+          return exports;
+      }
+      var modify_hls = function(js){
+         js = js.replace(/window\.MediaSource/g,'MediaGrabSource')
+                .replace(/window\.SourceBuffer/g,'SourceGrabBuffer')
+                .replace(/\.createObjectURL/g,'.createGrabObjectURL')
+                .replace(/\.revokeObjectURL/g,'.revokeGrabObjectURL');
+         return js;
+      }
+
+      var Hls = {};
+
+      function downloadHls(url) {
+         var
+            startSN = 0,
+            endSN = 0;
+
+         var hls = new Hls({debug:false,autoStartLoad:true});
+         hls.on(Hls.Events.MEDIA_ATTACHED, function () {
+            vkopt.log("hls.js attached to grabber");
+            hls.loadSource(url);
+         });
+
+         hls.on(Hls.Events.BUFFER_EOS,function(event_name, info){
+            vkopt.log('GRABBER DONE: ',Hls.Events.FRAG_LOADED);
+            onDone && onDone();
+
+         });
+
+         hls.on(Hls.Events.FRAG_LOADED,function(event_name, info){
+            if (info && info.frag && info.frag.sn)
+               setTimeout(function(){
+                  onProgress && onProgress(info.frag.sn - startSN, endSN - startSN);
+               },30);
+         });
+
+         hls.on(Hls.Events.MANIFEST_PARSED,function(n,m) {
+            vkopt.log('manifest_parsed', m);
+            startSN = m.levels[0].details.startSN
+            endSN = m.levels[0].details.endSN
+            mel.paused = false;
+            mel.currentTime = 0;
+            mel.emit('pause');
+            mel.emit('playing');
+         });
+         hls.attachMedia(mel);
+      }
+
+      AjGet('/js/lib/hls.min.js', function(js){
+         Hls = get_module(modify_hls(js)).Hls;
+         downloadHls(m3u8);
+      });
+   },
+   download: function(url, file_name, aid){
+      var buff = {
+         type: '',
+         data:[]
+      };
+
+      var draw_progress = function(percent, aid){
+         //vkopt.log(percent,'%');
+         var els = geByClass('_audio_row_'+aid);
+         for (var i = 0; i < els.length; i++){
+            var bar = geByClass1('vk_grab_progress', els[i]);
+            if (!bar){
+               bar = se('<div class="vk_grab_progress"></div>');
+               els[i].insertBefore(bar, els[i].firstChild);
+            }
+            show(bar);
+            bar.dataset['progress'] = percent;
+            bar.style.width = percent+'%';
+         }
+      };
+      var hide_progress = function(aid){
+         var els = geByClass('_audio_row_'+aid);
+         for (var i = 0; i < els.length; i++){
+            var bar = geByClass1('vk_grab_progress', els[i]);
+            bar && re(bar);
+         }
+      };
+      vkopt.hls.grab(url, {
+         onSegmentReady: function(data, type){
+            buff.type = type;
+            buff.data.push(data);
+         },
+         onDone: function(){
+            setTimeout(function(){
+               hide_progress(aid);
+            },500);
+            var url_create = (window.URL || window.webkitURL || window.mozURL || window).createObjectURL;
+
+            var data = new Blob(buff.data,{type:buff.type});
+            var url = url_create(data)
+
+            var dlnk = document.createElement('a');
+            dlnk.href = url;
+            dlnk.download = file_name;
+            (window.utilsNode || document.body).appendChild(dlnk)
+            dlnk.click();
+            setTimeout(function(){
+               re(dlnk);
+               //url_revoke(url);
+            },200);
+         },
+         onProgress: function(cur, total){
+            if (total == 0) return;
+            var pc = Math.round(cur/total*100);
+            draw_progress(pc, aid);
+         }
+      });
+   }
+
+}
+
 // Scrobbling API documentation: http://users.last.fm/~tims/scrobbling/scrobbling2.html
 vkopt['scrobbler'] = {
    css: function(){
@@ -4924,20 +5763,27 @@ vkopt['scrobbler'] = {
    },
    onPlayerNotify: function(event_name, data, var1){
       /*
-      if (['buffered','progress'].indexOf(event_name) == -1)
-         console.log(event_name, data, var1);
+      if (['buffered','progress','freq'].indexOf(event_name) == -1)
+         vkopt.log('AP NOTIFY: ',event_name, data, var1);
       */
+      var fm=vkopt.scrobbler;
       var act = '';
       switch(event_name){
+         case 'start_load':
+            fm.onPlayerState('load');
+            break;
          case 'start':
-            data && vkopt.scrobbler.onPlayerState('load');
-            vkopt.scrobbler.onPlayerState('play');
+            (data || !fm.last_track.aid) && fm.onPlayerState('load');
+            fm.onPlayerState('play');
+            break;
+         case 'ended':
+            fm.last_track.aid = null;
             break;
          case 'pause':
-            vkopt.scrobbler.onPlayerState('pause');
+            fm.onPlayerState('pause');
             break;
          case 'stop': // происходит только при разлогивании
-            vkopt.scrobbler.onPlayerState('stop');
+            fm.onPlayerState('stop');
             break;
       }
    },
@@ -4981,7 +5827,7 @@ vkopt['scrobbler'] = {
    onInit:function(){
       var fm=vkopt.scrobbler;
       var md5=vkMD5;//from vk_lib.js
-      fm.token = vkopt.settings.get('lastfm_token');
+      fm.token = vkopt.settings.get('lastfm_token') || "unset";
       fm.username = vkopt.settings.get('lastfm_username');
       fm.session_key = vkopt.settings.get('lastfm_session_key');
       fm.enable_scrobbling = vkopt.settings.get('lastfm_enable_scrobbling');
@@ -4989,7 +5835,7 @@ vkopt['scrobbler'] = {
          var apiKey=options.apiKey||'';
          var apiSecret=options.apiSecret||'';
          // https://ws.audioscrobbler.com/2.0/
-         var apiUrl=options.apiUrl||'http://ws.audioscrobbler.com/2.0/';
+         var apiUrl=options.apiUrl||'https://ws.audioscrobbler.com/2.0/';
          var cache=options.cache||undefined;var debug=typeof(options.debug)=='undefined'?false:options.debug;this.setApiKey=function(_apiKey){apiKey=_apiKey};this.setApiSecret=function(_apiSecret){apiSecret=_apiSecret};this.setApiUrl=function(_apiUrl){apiUrl=_apiUrl};this.setCache=function(_cache){cache=_cache};
          //original of library method internalCall  with JSONP/iframe requests:
          //var internalCall=function(params,callbacks,requestMethod){if(requestMethod=='POST'){var html=document.getElementsByTagName('html')[0];var frameName='lastfmFrame_'+new Date().getTime();var iframe=document.createElement('iframe');html.appendChild(iframe);iframe.contentWindow.name=frameName;iframe.style.display="none";var formState='init';iframe.width=1;iframe.height=1;iframe.style.border='none';iframe.onload=function(){if(formState=='sent'){if(!debug){setTimeout(function(){html.removeChild(iframe);html.removeChild(form)},1500)}};formState='done';if(typeof(callbacks.success)!='undefined'){callbacks.success()}};var form=document.createElement('form');form.target=frameName;form.action=apiUrl;form.method="POST";form.acceptCharset="UTF-8";html.appendChild(form);for(var param in params){var input=document.createElement("input");input.type="hidden";input.name=param;input.value=params[param];form.appendChild(input)};formState='sent';form.submit()}else{var jsonp='jsonp'+new Date().getTime();var hash=auth.getApiSignature(params);if(typeof(cache)!='undefined'&&cache.contains(hash)&&!cache.isExpired(hash)){if(typeof(callbacks.success)!='undefined'){callbacks.success(cache.load(hash))}return}params.callback=jsonp;params.format='json';window[jsonp]=function(data){if(typeof(cache)!='undefined'){var expiration=cache.getExpirationTime(params);if(expiration>0){cache.store(hash,data,expiration)}}if(typeof(data.error)!='undefined'){if(typeof(callbacks.error)!='undefined'){callbacks.error(data.error,data.message)}}else if(typeof(callbacks.success)!='undefined'){callbacks.success(data)}window[jsonp]=undefined;try{delete window[jsonp]}catch(e){}if(head){head.removeChild(script)}};var head=document.getElementsByTagName("head")[0];var script=document.createElement("script");var array=[];for(var param in params){array.push(encodeURIComponent(param)+"="+encodeURIComponent(params[param]))}script.src=apiUrl+'?'+array.join('&').replace(/%20/g,'+');head.appendChild(script)}};
@@ -5090,7 +5936,7 @@ vkopt['scrobbler'] = {
          if (code == 4)// токен сдох
             if (!fm.connect_box || !fm.connect_box.isVisible()){
                fm.connect_box=vkAlertBox(IDL('AuthBoxTitle'), IDL('AuthBoxText'), function(){
-                  var url = 'http://www.last.fm/api/auth?api_key=' + fm.api_key + '&cb=' + encodeURIComponent(location.protocol+'//' + location.host + '/settings?act=vkscrobbler');
+                  var url = 'https://www.last.fm/api/auth?api_key=' + fm.api_key + '&cb=' + encodeURIComponent(location.protocol+'//' + location.host + '/settings?act=vkscrobbler');
                   window.open(url,'_blank','');
                   //location.href = url;
                }, function(){
@@ -5463,7 +6309,6 @@ vkopt['scrobbler'] = {
                if (fm.last_track.aid == info.aid) return;
                fm.set_love_icon(true);
                fm.last_track=info;
-               vkopt.audio_info.view(info.artist,info.title);
                if (fm.s_timer) fm.s_timer.pause();
                fm.scrobled=false;
                fm.scrobble_timer(info);
@@ -5471,7 +6316,6 @@ vkopt['scrobbler'] = {
                fm.set_icon(info,'playing');        // add scrobbler icon track
             break;
          case 'play':    //if (fm.last_track.aid!=info.aid){ } else { }
-             vkopt.audio_info.view(info.artist,info.title);
              if (!fm.scrobled){
                 if (!fm.s_timer)
                    fm.scrobble_timer(info);
@@ -5499,299 +6343,6 @@ vkopt['scrobbler'] = {
    }
 };
 
-vkopt['audio_info'] = {
-   onSettings:{
-      Media:{
-         /*
-         audio_album_info: {
-            title: 'seLoadAudioAlbumInfo'
-         }
-         */
-      }
-   },
-   css: function(){
-      return vk_lib.get_block_comments(function(){
-      /*css:
-      #vk_album_info {display:none;}
-      .audio_layout #vk_album_info {display:block;}
-      #vk_album_info h4{cursor:pointer; min-height:30px; padding:3px 10px; border: 0px;}
-      #vk_album_info h4:hover{background-color: rgba(219, 227, 235, 0.5);}
-      #vk_album_info h4 img.small{max-width:30px;max-height:30px; margin-right:3px;}
-      #vk_album_info h4 img:hover{box-shadow: 0px 0px 4px #717171;}
-      #vk_album_info h4 img.big{max-width:155px;max-height:170px; margin:0 auto; margin-bottom:4px; display:none;}
-      #vk_album_info.view_big .small{display:none;}
-      #vk_album_info.view_big .big{display:block;}
-      #vk_album_info h4 .fix_btn{opacity:0;}
-      #vk_album_info h4:hover .fix_btn{opacity:0.4;}
-      #vk_album_info h4 .fix_btn:hover{opacity:0.7;}
-      #vk_album_info.fixed_album h4 .fix_btn,#vk_album_info.fixed_album h4 .fix_btn:hover{opacity:1;}
-      #vk_album_info .bio{padding:4px;}
-      .vk_album_thumb{padding:3px;}
-      .vk_album_tracks ul{list-style-type: disc; margin:0px; padding:0px; padding-left:4px; margin-left: 17px; color:#AAA;}
-      .vk_album_tracks .vk_tracks_search_btn{padding:3px 10px;}
-      .vk_audio_icon{ padding-left:12px; background: url(/images/icons/mono_iconset.gif) no-repeat 0 -221px; line-height: 11px; }
-      */
-      }).css;
-   },
-   preview_album_info_tpl: '\
-                          <h4 onclick="slideToggle(\'vk_album_full_info\');">\
-                              <img onclick="vkopt.audio_info.toggle_thumb(event);" class="big" src="%IMG2%">\
-                              <img onclick="vkopt.audio_info.toggle_thumb(event);" class="small fl_l" src="%IMG%"><span class="divide_">\
-                              <div class="fl_r fix_btn" onclick="vkopt.audio_info.pin(event)" onmouseover="vkopt.audio_info.pin(this,true)"><span class="vk_audio_icon"></span></div>\
-                              <b>%ARTIST%</b><br>%NAME%</span>\
-                          </h4>\
-                          <div id="vk_album_full_info" style="display:none;">\
-                             <!--<img class="fl_r vk_album_thumb" src="%IMG%">-->\
-                             <div class="vk_album_tracks">%TRACKS%</div>\
-                          </div>\
-   ',
-
-   alb_last_track: '',
-   current_album_info: null,
-   current_album_full_thumb: false,
-
-   pin: function(e,over){
-      if (over){
-         showTooltip(e, {text: IDL('FixAlbumInfo'), showdt: 0, black: 1, shift: [11, 0, 0]});
-         return;
-      }
-      cancelEvent(e);
-      toggleClass('vk_album_info','fixed_album');
-   },
-   toggle_thumb: function(ev){//vkViewAlbumThumb
-      cancelEvent(ev);
-      toggleClass('vk_album_info','view_big');
-      vkopt.audio_info.current_album_full_thumb=hasClass('vk_album_info','view_big');
-      vkopt.settings.set('vk_album_info_thumb',vkopt.audio_info.current_album_full_thumb?1:0);
-   },
-   view: function(artist,track){
-      if (!vkopt.settings.get('audio_album_info')) return;
-      var p = geByClass1('ui_rmenu');
-      if (!p) return;
-      if (!ge('vk_album_info')){
-         var div=se('<div id="vk_album_info" class="page_block ui_rmenu">');
-         insertAfter(div,p);
-         vkopt.audio_info.current_album_full_thumb=parseInt(vkopt.settings.get('vk_album_info_thumb') || '0') || false;
-      } else if (vkopt.audio_info.alb_last_track==artist+'-'+track && ge('vk_album_info').innerHTML!=''){
-         return;
-      }
-      if (hasClass('vk_album_info','fixed_album')) return;
-      ge('vk_album_info').innerHTML='';
-      vkopt.audio_info.alb_last_track=artist+'-'+track;
-      vkopt.audio_info.current_album_info=null;
-      vkopt.audio_info.get_info(artist,track,function(data,tracks){
-         if (!ge('vk_album_info')) return;
-         if (vkopt.audio_info.current_album_full_thumb)
-            addClass('vk_album_info','view_big');
-         if (vk_DEBUG) console.log(data);
-         var html='';
-         /*
-         console.log(
-            data.artist,
-            data.name,
-            data.releasedate,
-            data.image[1]['#text'],
-            tracks
-         );
-         */
-         if (tracks){
-            vkopt.audio_info.current_album_info=data;
-            for (var i=0; i<tracks.length;i++){
-               var track_artist = data.artist || data.name;
-               var track_name = (track_artist == 'Various Artists' ? '' : track_artist + ' - ') + tracks[i];
-               html+='<li><a href="/search?c[q]='+encodeURIComponent(track_name)+'&c[section]=audio" '+
-                  'onclick="if (checkEvent(event)) { event.cancelBubble = true; return}; '+
-                     'vkopt.audio.search_track(event, this, \''+track_name.replace(/'/,'\\\'')+'\'); return false">'+tracks[i]+'</a></li>';
-            }
-            html='<ul>'+html+'</ul>';//'<div class="vk_tracks_search_btn"><div class="button_blue button_wide"><button onclick="vkAlbumCollectPlaylist()">'+IDL('SearchAlbumTracks')+'</button></div></div>';
-         }
-         if (data.act!='artist_info'){
-            var year=(new Date(data.releasedate)).getFullYear();
-            html=vkopt.audio_info.preview_album_info_tpl.replace(/%ALBUM%/g,IDL('Album'))
-                                       .replace(/%NAME%/g,'<a href="'+data.url+'" target="_blank">'+data.name+(year?' ('+year+')':'')+'</a>')
-                                       .replace(/%ARTIST%/g,data.artist)
-                                       .replace(/%IMG%/g,data.image[1]['#text'] || '/images/question_c.gif')
-                                       .replace(/%IMG2%/g,data.image[2]['#text'] || '/images/question_c.gif')
-                                       .replace(/%TRACKS%/g,html);
-         } else {
-            html=vkopt.audio_info.preview_album_info_tpl.replace(/%ALBUM%/g,IDL('Album'))
-                                       .replace(/%NAME%/g,'')
-                                       .replace(/%ARTIST%/g,'<a href="'+data.url+'" target="_blank">'+data.name+'</a>')
-                                       .replace(/%IMG%/g,data.image[1]['#text'] || '/images/question_c.gif')
-                                       .replace(/%IMG2%/g,data.image[2]['#text'] || '/images/question_c.gif')
-                                       .replace(/%TRACKS%/g,html || (data.bio.summary?'<div class="bio">'+data.bio.summary+'</div>':''));
-         }
-         ge('vk_album_info').innerHTML=html;
-
-      });
-   },
-   album_info_cache:[],
-   get_info: function(artist,track,callback){
-      var in_cache=function(artist,track){
-         for (var i=0; i<vkopt.audio_info.album_info_cache.length;i++){
-            var c=vkopt.audio_info.album_info_cache[i];
-            if (c.artist==artist && c.track==track)
-               return c.data;
-         }
-         return false;
-      };
-      var x=in_cache(artist,track);
-      if (x){
-         if (vk_DEBUG) console.log('in cache',x);
-         setTimeout(function(){callback(x,x.tracks)},2);
-      } else
-         vkopt.scrobbler.lastfm.track.getInfo({
-               artist: artist,
-               track: track,
-               //username:LastFM_UserName,
-               autocorrect: 1
-            }, {
-               success: function(data) {
-                     if (vk_DEBUG) console.log(data);
-                     if (data.track.album) {
-                        var params={
-                           mbid: data.track.album.mbid
-                        };
-                        if (!data.track.album.mbid || data.track.album.mbid=="")
-                           params={
-                              artist: data.track.album.artist,
-                              album:data.track.album.title
-                           };
-                        vkopt.scrobbler.lastfm.album.getInfo(params, {
-                           success: function(data) {
-                              data=data.album;
-                              var tracks=[];
-                              for (var i=0; i<data.tracks.track.length;i++){
-                                 var t=data.tracks.track[i];
-                                 if (data.artist == 'Various Artists')
-                                     tracks.push(t.artist.name + ' - ' + t.name);
-                                 else
-                                     tracks.push(t.name);
-                                 if (!in_cache(artist,t.name)){
-                                    vkopt.audio_info.album_info_cache.push({
-                                       artist: artist,
-                                       track: t.name,
-                                       data:data
-                                    });
-                                 }
-                              }
-                              vkopt.audio_info.album_info_cache.push({
-                                 artist: artist,
-                                 track: track,
-                                 data:data
-                              });
-                              data.tracks=tracks;
-                              callback(data,tracks);
-                           }
-                        });
-                     } else if (data.track.artist && (data.track.artist.mbid || data.track.artist.name)){//data.track.artist.name
-                        if (vk_DEBUG) console.log('no album info... load artist info');
-                        var params={lang:'ru'};
-                        if (data.track.artist.mbid)
-                           params['mbid']=data.track.artist.mbid;
-                        else
-                           params['artist']=data.track.artist.name;
-                        //*
-                        // GET ARTIST INFO
-                        vkopt.scrobbler.lastfm.artist.getInfo(params, {
-                           success: function(a_data) {
-                             a_data=a_data.artist;
-                             a_data.act='artist_info';
-                             if (vk_DEBUG) console.log(a_data);
-
-                             // GET TOP TRACKS INFO
-                             params['limit']=100;
-                              vkopt.scrobbler.lastfm.artist.getTopTracks(params, {
-                                 success: function(data) {
-                                    data=data.toptracks;
-                                    data.act='top_tracks';
-                                    var tracks=[];
-                                    for (var i=0; i<data.track.length;i++){
-                                       var t=data.track[i];
-                                       tracks.push(t.name);
-                                    }
-                                    vkopt.audio_info.album_info_cache.push({
-                                       artist: artist,
-                                       track: track,
-                                       data:a_data
-                                    });
-                                    a_data.tracks=tracks;
-                                    callback(a_data,tracks);
-                                 },
-                                 error: function(code, message) {
-                                    if (vk_DEBUG) console.log(code, message);
-                                    callback(a_data,null);
-                                 }
-                              });
-                           }
-                        });
-
-
-
-                     }
-                     else if (vk_DEBUG) console.log('no info')
-                  },
-               error: function(code, message) {
-                     if (vk_DEBUG) console.log(code, message)
-                  }
-            }
-         );
-   }
-
-};
-
-vkopt['audioplayer'] = {
-   onSettings:{
-      Extra:{
-         audio_force_flash: {}
-      }
-   },
-   audioObjToArr: function(obj){
-      if (isObject(obj)){
-         var arr = ["", "", "", "", "", 0, 0, 0, "", 0, 0, "", "[]"];
-         arr[AudioUtils.AUDIO_ITEM_INDEX_ID] = obj.id;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_OWNER_ID] = obj.ownerId;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_TITLE] = obj.title;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_PERFORMER] = obj.performer;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_DURATION] = obj.duration;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_URL] = obj.url;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_FLAGS] = obj.flags;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_CONTEXT] = obj.context;
-         arr[AudioUtils.AUDIO_ITEM_INDEX_EXTRA] = obj.extra;
-         return arr;
-      } else {
-         return obj;
-      }
-   },
-   onLibFiles: function(file_name){
-
-      if (file_name != 'audioplayer.js')
-         return;
-
-      // У меня HTML5 плеер аудио глючит, вызывая артефакты со случайными перескакиваниями проигрываемой позиции по хронометражу.
-      if (vkopt.settings.get('audio_force_flash')){
-         Inj.Start('AudioPlayerHTML5.isSupported','if (vkopt.settings.get("audio_force_flash")) return false;');
-         Inj.Start('AudioPlayer.prototype.play','vkopt.audioplayer.init_flash_impl();');
-      }
-   },
-   init_flash_impl: function(){
-      if (!vkopt.settings.get('audio_force_flash'))
-         return;
-      var cur_pl = getAudioPlayer();
-      if (cur_pl && cur_pl._impl.type != 'flash'){
-         cur_pl._impl = new AudioPlayerFlash();
-         cur_pl._initImpl();
-         cur_pl._initEvents();
-         cur_pl._restoreVolumeState();
-         setTimeout(function() {
-            cur_pl.restoreState();
-            AudioUtils.toggleAudioHQBodyClass();
-            cur_pl.updateCurrentPlaying();
-         }, 0)
-      }
-   }
-};
-
 vkopt['videoview'] = {
    onSettings:{
       Media:{
@@ -5810,20 +6361,12 @@ vkopt['videoview'] = {
          width: 20px;
          transform: rotate(90deg);
       }
-      .vk_mv_down_links_tt {
+      .mv_top_button .vk_mv_down_links_tt, .video_thumb_actions .vk_mv_down_links_tt {
          background: rgba(0,0,0,0.6);
          border: 1px solid rgba(255,255,255,0.4);
       }
-
-      .vk_mv_down_links_tt.eltt.eltt_bottom:before {
-         border-bottom-color: transparent;
-      }
-      .vk_mv_down_links_tt.eltt.eltt_bottom:after {
-         border-bottom-color: rgba(255, 255, 255, 0.4);
-         margin-bottom: 1px;
-      }
-      .vk_mv_down_links_tt.eltt.eltt_bottom .eltt_arrow{
-         border-bottom-color: #000;
+      .mv_top_button .vk_mv_down_links_tt .eltt_arrow, .video_thumb_actions .vk_mv_down_links_tt .eltt_arrow {
+         border-bottom: 7px solid rgba(0,0,0,0.91) !important;                    
       }
       .vk_mv_down_links_tt a {
          display: block;
@@ -5861,7 +6404,7 @@ vkopt['videoview'] = {
          </div>
          */
          /*dl_link:
-         <a href="{vals.url}" download="{vals.name}" onclick="return vkopt.videoview.download_file(this)" onmouseover="vkopt.videoview.get_size(this)">{vals.caption}<span class="vk_vid_size_info"></span></a>
+         <a href="{vals.url}" download="{vals.name}" onclick="return vkopt.videoview.download_file(this)" onmouseover="vkopt.videoview.get_size(this, event)">{vals.caption}<span class="vk_vid_size_info"></span></a>
          */
          /*ext_link:
          <a class="vk_vid_external_view" href="{vals.url}">{vals.source_name}</a>
@@ -5888,9 +6431,12 @@ vkopt['videoview'] = {
      re('vk_mv_down_icon'); // убиваем кнопку, т.к не выходит убить тултип таким образом: data(ge('vk_mv_down_icon'), 'ett').destroy();
      if (!html)
         return null;
-      if (!ge('vk_mv_down_icon') && ge('mv_top_controls')){
-         var btn = se(vk_lib.tpl_process(vkopt.videoview.tpls['dl_btn'], {}));
-         ge('mv_top_controls').appendChild(btn);
+      var btn;
+      if (!ge('vk_mv_down_icon') && ge('VideoLayerInfo__topControls')){
+         btn = se(vk_lib.tpl_process(vkopt.videoview.tpls['dl_btn'], {}));
+         ge('VideoLayerInfo__topControls').appendChild(btn);
+      } else {
+         return;
       }
       // создаём новое тултип-меню
       vkopt.videoview._links_tt = new ElementTooltip(btn,{
@@ -6036,7 +6582,10 @@ vkopt['videoview'] = {
          vkopt.videoview.update_dl_btn(html);
       });
    },
-   get_size: function(el){
+   get_size: function(el,ev){
+      if (ev && (ev.metaKey || ev.ctrlKey)){
+         el.href = el.href.split('#')[0];
+      }
       if (!el || !el.href || hasClass(el,'size_loaded') || /\.m3u8/.test(el.href)) return;
       var WAIT_TIME = 4000;
       var szel = geByTag1('span', el);
@@ -6325,15 +6874,37 @@ vkopt['videos'] = {
       .video_thumb_actions>div.vk_video_thumb_action_link.vk_links_loading .icon {
           background: url(/images/upload_inv_mini.gif) 50% 50% no-repeat;
       }
+      .videoplayer_settings_menu_sublist_item.vk_wg_dl_item{
+         justify-content: flex-start;
+      }
+      #vk_wg_dl_menu{
+         width: 160px;
+      }
+      .videoplayer_settings_menu_list_icon.vk_wg_dl_icon {
+         width: 18px;
+         height: 16px;
+         display: inline-block;
+         margin-right: 23px;
+         vertical-align: top;
+         background-image: url(/images/icons/pv_actions.png?3);
+         background-position: 0 0px;
+      }
       */
       }).css
    },
    onLibFiles: function(fn){
-      if (fn != 'video.js') return;
-      Inj.End('Video.buildVideoEl', function(){
-         if (this.result)
-            vkopt.videos.processNode(this.result);
-      })
+      if (fn == 'video.js'){
+         Inj.End('Video.buildVideoEl', function(){
+            if (this.result)
+               vkopt.videos.processNode(this.result);
+         })
+      }
+
+      if ((fn == 'videoplayer.js') && nav.objLoc[0]=="video_ext.php"){
+         var params = document.body.innerHTML.match(/playerParams\s*=\s*(\{[\s\S]+\}\]\});/);
+         params = params && JSON.parse(params[1]);
+         params && setTimeout(function(){vkopt.videos.widget_player(params)}, 10);
+      }
    },
    onInit: function(){
       vkopt.videos.tpls = vk_lib.get_block_comments(function(){
@@ -6341,6 +6912,27 @@ vkopt['videos'] = {
          <div class="vk_video_thumb_action_link" onclick="return vkopt.videos.show_links(event, this, '{vals.video}','{vals.list=}');">
             <div class="icon"></div>
          </div>
+         */
+         /*wg_show_dl:
+         <div class="videoplayer_settings_menu_list_item" role="menuitemradio" tabindex="0" onclick="toggle('vk_wg_dl_menu')">
+            <div class="videoplayer_settings_menu_list_icon vk_wg_dl_icon"></div>
+            <div class="videoplayer_settings_menu_list_title">{lng.download}</div>
+         </div>
+         */
+         /*wg_sub_menu:
+         <div class="videoplayer_settings_menu_sublist" id="vk_wg_dl_menu" style="display:none">
+            <div class="videoplayer_settings_menu_sublist_header" onclick="hide('vk_wg_dl_menu')">{lng.download}</div>
+            <div class="videoplayer_settings_menu_sublist_divider"></div>
+            <div class="videoplayer_settings_menu_sublist_items">
+               {vals.content}
+            </div>
+         </div>
+         */
+         /*wg_dl_item:
+         <a class="videoplayer_settings_menu_sublist_item vk_wg_dl_item" role="menuitemradio" tabindex="0" href="{vals.url}" download="{vals.name}" onclick="return vkopt.videoview.download_file(this)" onmouseover="vkopt.videoview.get_size(this, event)">
+            {vals.caption}
+            <span class="vk_vid_size_info"></span>
+         </a>
          */
       });
    },
@@ -6373,6 +6965,34 @@ vkopt['videos'] = {
          );
       }
    },
+   widget_player: function(params){
+      if (!vkopt.settings.get('vid_dl')) return;
+      var
+         vars = vkopt.videoview.get_vars({player:params},nav.objLoc.oid+'_'+nav.objLoc.id),
+         menu = geByClass1('videoplayer_settings_menu_list');
+      if (!vars || !menu) return;
+
+
+      var links = vkopt.videoview.get_video_links(vars);
+      var filename = vkCleanFileName(unclean(vars.md_title));
+      var html = '';
+      for (var i = 0; i < links.length; i++){
+         html += vk_lib.tpl_process(vkopt.videos.tpls['wg_dl_item'], {
+            url: links[i].url + (links[i].ext ? '#FILENAME/' + vkEncodeFileName(filename + '_' + links[i].quality) + links[i].ext : ''),
+            name: filename + '_' + links[i].quality + links[i].ext,
+            caption: links[i].quality
+         })
+      }
+
+      var dl_menu = se(
+         vk_lib.tpl_process(vkopt.videos.tpls['wg_sub_menu'], {
+            content: html
+         })
+      );
+      menu.parentNode.appendChild(dl_menu);
+      menu.insertBefore(se(vk_lib.tpl_process(vkopt.videos.tpls['wg_show_dl'],{})),menu.firstChild)
+
+   },
    show_links: function(ev, el, video, list){
       cancelEvent(ev);
       if (hasClass(el,'vk_links_loading') || hasClass(el,'vk_links_loaded'))
@@ -6385,17 +7005,11 @@ vkopt['videos'] = {
             addClass(el,'vk_links_loaded');
             el.dl_ett = new ElementTooltip(el,{
                cls: "vk_mv_down_links_tt",
+               appendTo: gpeByClass("video_item", el),
                forceSide: "bottom",
                elClassWhenTooltip: "vk_mv_down_links_shown",
                content: html,
-               offset: [-3, 0],
-               setPos: function(){
-                  return  {
-                     left: 33,
-                     top: 34,
-                     arrowPosition: 21
-                  }
-               }
+               offset: [2, 0]
             });
             el.dl_ett.show();
          }
@@ -6441,6 +7055,138 @@ vkopt['videos'] = {
       })
       return false;
    }
+}
+
+vkopt['stories'] = {
+   css: function(){
+      return vk_lib.get_block_comments(function(){
+      /*css:
+      .unread_story_state{
+         cursor: pointer;
+      }
+      .unread_story_state:before {
+         content: '';
+         display: block;
+         width: 30px;
+         height: 15px;
+         background: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%221%202%2025%2012%22%20height%3D%2212%22%20width%3D%2225%22%20fill%3D%22%23828a99%22%3E%3Cpath%20d%3D%22M13.542%2012.763c-4.2%200-7-4-7-5s2.8-5%207-5%207%204%207%205-2.8%205-7%205zm0-1.5c1.9%200%203.5-1.6%203.5-3.5s-1.6-3.5-3.5-3.5-3.5%201.6-3.5%203.5%201.6%203.5%203.5%203.5zm0-1.9c-.9%200-1.6-.7-1.6-1.6%200-.9.7-1.6%201.6-1.6.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6zM24.124%202.147a10.345%2010.345%200%200%201%201.723%205.727%2010.283%2010.283%200%200%201-1.71%205.718l-.842-.479a9.425%209.425%200%200%200%201.564-5.241%209.472%209.472%200%200%200-1.576-5.247zM21.99%203.362c.813%201.216%201.293%202.555%201.379%204.032.009.156.014.314.014.474.002%201.678-.552%203.22-1.379%204.498l-.845-.474c.746-1.155%201.24-2.535%201.238-4.025-.001-1.503-.433-2.811-1.244-4.028zm-16.098.444c-.81%201.213-1.238%202.52-1.237%204.022.002%201.49.5%202.871%201.25%204.03l-.845.47c-.83-1.281-1.387-2.825-1.389-4.503-.002-1.665.486-3.16%201.382-4.502zM3.756%202.582a9.422%209.422%200%200%200-1.567%205.24%209.479%209.479%200%200%200%201.578%205.249l-.84.477A10.345%2010.345%200%200%201%201.202%207.82%2010.292%2010.292%200%200%201%202.915%202.1z%22%2F%3E%3C%2Fsvg%3E") no-repeat 50% / contain;
+         margin-right: 6px;
+         opacity: 0.5
+      }
+      .vk_unread_story .unread_story_state:before {
+         background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%221%202%2025%2012%22%20height%3D%2212%22%20width%3D%2225%22%20fill%3D%22%23828a99%22%3E%3Cpath%20d%3D%22M13.542%2012.757c-4.146%200-6.91-3.984-6.91-4.98%200-.997%202.764-4.98%206.91-4.98%204.146%200%206.91%203.983%206.91%204.98%200%20.996-2.764%204.98-6.91%204.98zm0-1.494c1.876%200%203.455-1.594%203.455-3.487%200-1.892-1.58-3.486-3.455-3.486s-3.455%201.594-3.455%203.486c0%201.893%201.58%203.487%203.455%203.487z%22%20fill%3D%22%23939393%22%2F%3E%3Cpath%20fill%3D%22%23939393%22%20stroke%3D%22%23939393%22%20stroke-width%3D%22.992%22%20d%3D%22M7.441%2012.284l12.476-9.07%22%2F%3E%3C%2Fsvg%3E");
+      }
+
+      .page_story_photo_cont .unread_story_state:before{
+         background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%221%202%2025%2012%22%20height%3D%2212%22%20width%3D%2225%22%20fill%3D%22%23ffffff%22%3E%3Cpath%20d%3D%22M13.542%2012.763c-4.2%200-7-4-7-5s2.8-5%207-5%207%204%207%205-2.8%205-7%205zm0-1.5c1.9%200%203.5-1.6%203.5-3.5s-1.6-3.5-3.5-3.5-3.5%201.6-3.5%203.5%201.6%203.5%203.5%203.5zm0-1.9c-.9%200-1.6-.7-1.6-1.6%200-.9.7-1.6%201.6-1.6.9%200%201.6.7%201.6%201.6%200%20.9-.7%201.6-1.6%201.6zM24.124%202.147a10.345%2010.345%200%200%201%201.723%205.727%2010.283%2010.283%200%200%201-1.71%205.718l-.842-.479a9.425%209.425%200%200%200%201.564-5.241%209.472%209.472%200%200%200-1.576-5.247zM21.99%203.362c.813%201.216%201.293%202.555%201.379%204.032.009.156.014.314.014.474.002%201.678-.552%203.22-1.379%204.498l-.845-.474c.746-1.155%201.24-2.535%201.238-4.025-.001-1.503-.433-2.811-1.244-4.028zm-16.098.444c-.81%201.213-1.238%202.52-1.237%204.022.002%201.49.5%202.871%201.25%204.03l-.845.47c-.83-1.281-1.387-2.825-1.389-4.503-.002-1.665.486-3.16%201.382-4.502zM3.756%202.582a9.422%209.422%200%200%200-1.567%205.24%209.479%209.479%200%200%200%201.578%205.249l-.84.477A10.345%2010.345%200%200%201%201.202%207.82%2010.292%2010.292%200%200%201%202.915%202.1z%22%2F%3E%3C%2Fsvg%3E");
+         margin: 6px auto 0 auto;
+
+      }
+      .vk_unread_story .page_story_photo_cont .unread_story_state:before {
+         background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%221%202%2025%2012%22%20height%3D%2212%22%20width%3D%2225%22%20fill%3D%22%23ffffff%22%3E%3Cpath%20d%3D%22M13.542%2012.757c-4.146%200-6.91-3.984-6.91-4.98%200-.997%202.764-4.98%206.91-4.98%204.146%200%206.91%203.983%206.91%204.98%200%20.996-2.764%204.98-6.91%204.98zm0-1.494c1.876%200%203.455-1.594%203.455-3.487%200-1.892-1.58-3.486-3.455-3.486s-3.455%201.594-3.455%203.486c0%201.893%201.58%203.487%203.455%203.487z%22%2F%3E%3Cpath%20stroke%3D%22%23ffffff%22%20stroke-width%3D%22.992%22%20d%3D%22M7.441%2012.284l12.476-9.07%22%2F%3E%3C%2Fsvg%3E");
+      }
+      .stories_feed_title .unread_story_state{
+         float: right;
+         opacity: 0;
+         transition: opacity 100ms ease-in-out;
+      }
+      .stories_feed_cont:hover .stories_feed_title  .unread_story_state{
+         opacity: 1;
+      }
+      .stories_groups_block_stories_info .unread_story_state {
+         position: absolute;
+         right: -42px;
+         bottom: -2px;
+      }
+      .stories_groups_block_stories_info {
+         position: relative;
+      }
+      .page_story_photo_cont .tt_black .tt_text{
+         white-space: normal;
+      }
+      .page_story_photo_cont .tt_w.tt_black.tt_down:after{
+         left: 58px;
+      }
+      */
+      }).css
+   },
+   onSettings:{
+      Extra: {
+         unread_story: {
+            class_toggler: true
+         },
+         unread_toggle_btn: {
+            default_value: true
+         },
+         dl_story_item: {
+            use_mutations: true,
+            default_value: true
+         }
+      }
+   },
+   onInit: function(){
+      vkopt.stories.tpls = vk_lib.get_block_comments(function(){
+         /*change_state:
+         <div class="unread_story_state" onclick="return vkopt.stories.unread_state_toggle(this, event);" onmouseover="vkopt.stories.unread_state_tip(this);" >
+         </div>
+         */
+      });
+   },
+   onAddedNodes: function(addedNodes) {
+      if (vkopt.settings.get('dl_story_item'))
+         for (var i = 0; i < addedNodes.length; ++i) {
+            var el = addedNodes[i];
+            // if (el.nodeType !== 3) console.log("added: ", el); // dbg
+            if (el.className == "stories_story_bottom") {
+               if (geByClass1('dl_story', el)) return;
+               el = geByClass1('ui_actions_menu', el);
+               var data = cur.storyLayer.activeStory.story.data;
+               if (!data || !el) return;
+               var link = (data.type == 'photo') ? data.photo_url + '#FILENAME/vk_story.jpg' : data.video_url + '#FILENAME/vk_story.mp4';
+               el.appendChild(se('<a class="ui_actions_menu_item dl_story" download="" href="'+link+'" onclick="return vkDownloadFile(this);">'+IDL('download')+'</a>'));        
+            }
+         }
+   },
+   onRequestQuery: function(url, query, options) {
+      if (url == 'al_stories.php' && query.act == 'read_stories' && vkopt.settings.get('unread_story')) {
+         return false;
+      }
+   },
+   processNode: function(node){
+      if (!vkopt.settings.get('unread_toggle_btn')) return;
+      var ref = geByClass1('stories_feed_title', node) || geByClass1('stories_groups_block_stories_info', node) || geByClass1('page_story_photo_cont', node);
+      ref && ref.appendChild(se(vk_lib.tpl_process(vkopt.stories.tpls['change_state'], {})));
+   },
+   download_story: function (el){
+      var data = cur.storyLayer.activeStory.story.data;
+      if (!data) return;
+      el.href = (data.type == 'photo') ? data.photo_url + '#FILENAME/vk_story.jpg' : data.video_url + '#FILENAME/vk_story.mp4';
+      return vkDownloadFile(el);
+   },
+   unread_state_toggle: function(el, ev){
+      cancelEvent(ev);
+      if (el.tt){
+         el.tt.hide({fasthide:true});
+         el.tt.show();
+      }
+      vkopt.settings.set('unread_story',!vkopt.settings.get('unread_story'));
+      vkopt.stories.unread_state_tip(el);
+      return false;
+   },
+   unread_state_tip: function(el){
+      var opts = {
+         text: function(){
+            return vkopt.settings.get('unread_story') ? IDL('StoryReadReportDisabled') : IDL('StoryReadReportEnabled');
+         },
+         black: true,
+         shift: [4, 5]
+      }
+      if (hasClass(el.parentNode, 'page_story_photo_cont')){
+         opts.width = 117;
+         opts.shift = [-3, 8];
+      }
+      showTooltip(el, opts);
+   },
 }
 
 vkopt['messages'] = {
@@ -6504,11 +7250,11 @@ vkopt['messages'] = {
             margin-top: -3px;
             margin-right: 0;
          }
-         .ui_actions_menu_item.vk_acts_item_icon:before,
-         .vk_acts_item_icon:before,
-         .vk_acts_item_ricon:after{
-            background: url("data:image/svg+xml,%3Csvg%20version%3D%221.1%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%09%20viewBox%3D%220%200%20256%20256%22%3E%3Cpath%20fill-rule%3D%22evenodd%22%20clip-rule%3D%22evenodd%22%20fill%3D%22%237D9AB7%22%20d%3D%22M204.1%2C66l-25.3%2C30.4c-14.1-25-44.3-37.6-72.7-28.5%09c-32.5%2C10.4-50.5%2C45.2-40%2C77.8c6.2%2C19.4%2C21.2%2C33.6%2C39.1%2C39.7c7.4%2C14%2C15.4%2C31.9%2C21.1%2C46c-7.5%2C7.8-12.1%2C19.6-12.1%2C19.6l-30.9-6.7%09l3.5-26.3c-4.8-2-9.5-4.4-13.9-7.2L53.6%2C229l-23.4-21.3l16.2-21c-3.1-4.1-6-8.5-8.5-13.2l-25.8%2C6l-9.7-30.1l24.5-10.1%09c-0.7-5.3-0.9-10.5-0.8-15.7L0.8%2C116l6.7-30.9l26.3%2C3.5c2-4.8%2C4.4-9.5%2C7.2-13.9L22.8%2C55.3l21.3-23.4l21%2C16.2c4.1-3.1%2C8.5-6%2C13.2-8.5%09l-6-25.8l30.1-9.7l10.1%2C24.5c5.3-0.7%2C10.5-0.9%2C15.7-0.8l7.7-25.4l30.9%2C6.7l-3.5%2C26.3c4.8%2C2%2C9.5%2C4.4%2C13.9%2C7.2l19.3-18.2l23.4%2C21.3%09l-15.4%2C20L204.1%2C66z%20M79%2C106.3l49.8-18.1l44.6%2C87.8l31.7-95.6l50%2C18.1c-11%2C24.1-21%2C48.8-30.1%2C74c-9.1%2C25.2-17.2%2C50.9-24.4%2C77h-50.9%09c-9.5-22.9-20.2-46.3-32-70.2C105.8%2C155.3%2C92.9%2C131%2C79%2C106.3z%22/%3E%3C/svg%3E") 9px 0px no-repeat;
-            height: 17px;
+         [dir] .ui_actions_menu_item.vk_acts_item_icon:before,
+         [dir] .vk_acts_item_icon:before,
+         [dir] .vk_acts_item_ricon:after{
+            background: url("data:image/svg+xml,%3Csvg%20version%3D%221.1%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%09%20viewBox%3D%220%200%20256%20256%22%3E%3Cpath%20fill-rule%3D%22evenodd%22%20clip-rule%3D%22evenodd%22%20fill%3D%22%237D9AB7%22%20d%3D%22M204.1%2C66l-25.3%2C30.4c-14.1-25-44.3-37.6-72.7-28.5%09c-32.5%2C10.4-50.5%2C45.2-40%2C77.8c6.2%2C19.4%2C21.2%2C33.6%2C39.1%2C39.7c7.4%2C14%2C15.4%2C31.9%2C21.1%2C46c-7.5%2C7.8-12.1%2C19.6-12.1%2C19.6l-30.9-6.7%09l3.5-26.3c-4.8-2-9.5-4.4-13.9-7.2L53.6%2C229l-23.4-21.3l16.2-21c-3.1-4.1-6-8.5-8.5-13.2l-25.8%2C6l-9.7-30.1l24.5-10.1%09c-0.7-5.3-0.9-10.5-0.8-15.7L0.8%2C116l6.7-30.9l26.3%2C3.5c2-4.8%2C4.4-9.5%2C7.2-13.9L22.8%2C55.3l21.3-23.4l21%2C16.2c4.1-3.1%2C8.5-6%2C13.2-8.5%09l-6-25.8l30.1-9.7l10.1%2C24.5c5.3-0.7%2C10.5-0.9%2C15.7-0.8l7.7-25.4l30.9%2C6.7l-3.5%2C26.3c4.8%2C2%2C9.5%2C4.4%2C13.9%2C7.2l19.3-18.2l23.4%2C21.3%09l-15.4%2C20L204.1%2C66z%20M79%2C106.3l49.8-18.1l44.6%2C87.8l31.7-95.6l50%2C18.1c-11%2C24.1-21%2C48.8-30.1%2C74c-9.1%2C25.2-17.2%2C50.9-24.4%2C77h-50.9%09c-9.5-22.9-20.2-46.3-32-70.2C105.8%2C155.3%2C92.9%2C131%2C79%2C106.3z%22/%3E%3C/svg%3E") 50% 50% no-repeat;
+            height: 25px;
          }
          .ui_actions_menu_item.vk_acts_item{
             padding-left: 0;
@@ -6527,6 +7273,7 @@ vkopt['messages'] = {
          }
          .vk_audio_msg_btns{
             padding: 0px 10px;
+            margin-top: 5px;
          }
          .vk_au_msg_dl{
             font-size: 10px;
@@ -6548,7 +7295,7 @@ vkopt['messages'] = {
          }
 
        .vk_block_typing_btn .im-chat-input .im-chat-input--textarea:not(.im-chat-input_open-keyboard):not(.im-chat-input_close-keyboard):not(.im-chat-input--textarea_show-templates) .im-chat-input--text{
-          padding-right: 106px;
+          padding-right: 110px;
        }
        .im-chat-input_close-keyboard .msg_typing_icon,
        .im-chat-input_open-keyboard .msg_typing_icon{
@@ -6567,13 +7314,14 @@ vkopt['messages'] = {
        }
        .msg_mark_read_icon {
           float: right;
-          margin: 4px 4px 0 0;
+          margin: auto;
+          margin-right: 4px;
           width: 24px;
           height: 24px;
           cursor: pointer;
           background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%2392abc6'%3e%3cpath d='M21.99 8c0-.72-.37-1.35-.94-1.7L12 1 2.95 6.3C2.38 6.65 2 7.28 2 8v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2l-.01-10zM12 13L3.74 7.84 12 3l8.26 4.84L12 13z'/%3e%3c/svg%3e");
-          opacity: 0.75;
-          filter: alpha(opacity=75);
+          opacity: .7;
+          filter: alpha(opacity=70);
        }
        .msg_mark_read_icon:hover {
           opacity: 1;
@@ -6618,6 +7366,29 @@ vkopt['messages'] = {
         }
         .vk_block_mark_read_btn ._im_dialogs_settings .msg_mark_read_icon{
           margin-top:11px
+        }
+
+        .share_pm{
+          position: absolute;
+          right: 120px;
+        }
+
+        .nim-dialog.nim-dialog_classic .nim-dialog--chat-info {
+          margin-bottom: 0px !important;
+        }
+        .nim-dialog--id-chat{
+          position: absolute;
+          color:#939393;
+          margin-left: 5px;
+          font-size: 12px;
+        }
+        .nim-dialog--chat-null-info{
+          overflow: hidden;
+          color: #939393;
+          padding: 30px 50px;
+          font-size: 14px;
+          text-align: center;
+          line-height: 22px;
         }
         */
       }).css + vkopt.messages.css_msg_bg(vkopt.settings.get('old_unread_msg_bg'))
@@ -6744,11 +7515,20 @@ vkopt['messages'] = {
          <div id="saveldr" style="display:none; padding:8px; padding-top: 14px; text-align:center; width:360px;"><img src="/images/upload.gif"></div>
          <div id="save_btn_text" style="text-align:center">
             <div class="button_blue"><button onclick="vkopt.messages.get_history({vals.peer}); return false;">{lng.SaveHistory} *.html</button></div><br>
+            <div class="button_gray"><button onclick="vkopt.messages.get_history_json({vals.peer}); return false;">(*.json)</button></div><br>
+            <div class="button_gray"><button onclick="toggle('msg_save_more'); return false;">(*.txt.zip)</button></div>
+            <div id="msg_save_more" style="display:none;">
+            <div class="button_gray"><button onclick="vkopt.messages.zip.txt({vals.peer}); return false;">{lng.SaveHistory}</button></div>
+            <div class="button_gray"><button onclick="vkopt.messages.zip.txt({vals.peer},true); return false;">{lng.SaveHistoryCfg}</button></div>
+            </div>
+
+            <!--
             <div class="button_gray"><button onclick="toggle('msg_save_more'); return false;">(*.txt)</button></div>
             <div id="msg_save_more" style="display:none;">
             <div class="button_gray"><button onclick="vkopt.messages.get_history_txt({vals.peer}); return false;">{lng.SaveHistory}</button></div>
             <div class="button_gray"><button onclick="vkopt.messages.get_history_txt({vals.peer},true); return false;">{lng.SaveHistoryCfg}</button></div>
             </div>
+            -->
          </div>
          */
          /*msg_exp_txt_cfg:
@@ -6774,8 +7554,8 @@ vkopt['messages'] = {
          */
          /*audio_msg_btns:
          <div class="vk_audio_msg_btns">
-           <a class="vk_au_msg_dl" href="{vals.url_mp3}"><div></div>mp3</a>
-           <a class="vk_au_msg_dl" href="{vals.url_ogg}"><div></div>ogg</a>
+           <a class="vk_au_msg_dl" onclick="vkopt.res.downloadResource('{vals.url_mp3}')"><div></div>mp3</a>
+           <a class="vk_au_msg_dl" onclick="vkopt.res.downloadResource('{vals.url_ogg}')"><div></div>ogg</a>
          </div>
          */
          /*search_deleted_content:
@@ -6823,6 +7603,34 @@ vkopt['messages'] = {
 	 */
 	 /*typing_mread_icon:
 	   <div id="{vals.prefix}_{vals.type}_st" class="msg_{vals.type}_icon {vals.class_btn}" onclick="vkopt.messages.change_typing_mread_st('{vals.prefix}','{vals.type}')" onmouseover="vkopt.messages.typing_mread_tip(this,'{vals.prefix}','{vals.type}')"></div>
+	 */
+	 /*radiobtn_share_pm:
+	 <div class="like_share_row share_pm">
+	   <div class="radiobtn" onclick="vkopt.messages.send_to_pm(this)" id="like_share_pm" aria-checked="false" tabindex="-1" role="radio">{lng.sendToPM}</div>
+	 </div>
+	 */
+	 /*search_chats_item:
+	   <a class="ui_actions_menu_item _im_settings_action im-action vk_acts_item_icon" id="vk_search_chats_item" onclick="vkopt.messages.search_chats();">{lng.searchChats}</a>
+	 */
+	 /*chats_item:
+	 <div class="nim-dialog nim-dialog_classic">
+	   <div class="nim-dialog--photo">
+	     <div class="nim-peer">
+	       <div class="nim-peer--photo">
+              <a href="/im?sel=c{vals.id}" target="_blank"><div class="im_grid"><img alt="" src="{vals.photo}"></div></a>
+	       </div>
+	     </div>
+	   </div>
+	   <a class="nim-dialog--content" href="/im?sel=c{vals.id}">
+	     <div class="nim-dialog--cw">
+	       <div class="nim-dialog--name nim-dialog--chat-info">
+              <span class="nim-dialog--name-w" aria-hidden="true">{vals.title}</span>
+              <span class="nim-dialog--id-chat">#{vals.id}</span>
+	       </div>
+	       {vals.info}
+	     </div>
+	   </a>
+	 </div>
 	 */
       });
    },
@@ -6877,13 +7685,7 @@ vkopt['messages'] = {
 
    },
    onLocation: function(nav_obj, cur_module_name){
-      if(nav.objLoc[0].substr(0,3) == 'gim') {
-         if (vkopt.settings.get('block_mark_read_btn'))
-            vkopt.messages.add_typing_read_icon('gim', 'mark_read');
-         if (vkopt.settings.get('block_typing_btn'))
-            vkopt.messages.add_typing_read_icon('gim', 'typing');
-      }
-      if (nav.objLoc[0] != 'im'){
+      if (!/^(g?im|al_im.php)/.test(nav.objLoc[0])){
          clearInterval(vkopt.messages.timeout_online_count_users);
          return;
       }
@@ -6894,12 +7696,13 @@ vkopt['messages'] = {
       } else {
          clearInterval(vkopt.messages.timeout_online_count_users);
       }
-
+	  
+      var prefix = (nav.objLoc[0].substr(0,3) == 'gim') ? 'gim' : 'im';
       if (vkopt.settings.get('block_mark_read_btn'))
-         vkopt.messages.add_typing_read_icon('im', 'mark_read');
+         vkopt.messages.add_typing_read_icon(prefix, 'mark_read');
 
       if (vkopt.settings.get('block_typing_btn'))
-         vkopt.messages.add_typing_read_icon('im', 'typing');
+         vkopt.messages.add_typing_read_icon(prefix, 'typing');
 
       vkopt.messages.info_icon();
       vkopt_core.timeout(vkopt.messages.acts_menu, 500);
@@ -6918,8 +7721,21 @@ vkopt['messages'] = {
             if (el && /im-page--dialogs-settings/.test(el.className||''))
                vkopt.messages.dialogs_menu();
          })
+      if (fn == 'sharebox.js')
+         Inj.Start('ShareBox.rbChanged', function(){
+            if(!radioBtns.like_share.check) return;
+            radioBtns.like_share.check = false;
+            cur.wdd.like_mail_dd.selected = {};
+            cur.wdd.like_mail_dd.selCount = 0;
+         })
    },
    processNode: function(node, params){
+      if (params && params.q &&  params.q.act == 'publish_box')
+         try {
+            geByClass1('like_share_radio', node).insertBefore(se(vk_lib.tpl_process(vkopt.messages.tpls['radiobtn_share_pm'])), geByClass('like_share_row', node)[3]);
+         } catch(e) {
+            console.warn('VkOpt: Add share_pm failed');
+         }
       if (!vkopt.settings.get('audio_dl') || !node || (params && params.source == "getTemplate" && params.tpl_name!="im_msg_row")) return;
       var amsg = geByClass('audio-msg-track', node);
       for (var i = 0; i < amsg.length; i++){
@@ -6964,7 +7780,7 @@ vkopt['messages'] = {
       });
    },
    add_typing_read_icon: function(prefix, type){
-      var el = (type == 'mark_read') ? ge('ui_rmenu_all') || geByClass1('_im_dialogs_settings') : geByClass1('im_chat-input--buttons');
+      var el = (type == 'mark_read') ? ge('_im_dialogs_header_controls') || geByClass1('_im_dialogs_header_controls') : geByClass1('im_chat-input--buttons');
       if(!el || ge(prefix+'_'+type+'_st')) return;
       var class_btn = vkopt.settings.get(prefix+'_block_'+type) ? 'off_'+type : '';
       var icon_btn = el.insertBefore(se(vk_lib.tpl_process(vkopt.messages.tpls['typing_mread_icon'], {
@@ -7016,7 +7832,8 @@ vkopt['messages'] = {
                       'while(listUsers[i]){'+
                       'if(listUsers[i].online == 1) count=count+1; i=i+1;}'+
                       'return count;';
-      dApi.call('execute',{v:'5.73', code:body_code},function(r){
+      dApi.call('execute',{v:'5.131', code:body_code},function(r){
+         if (!p || !p.parentNode) return;
          if (!ge('countUsers'))
            p.appendChild(se('<span id="countUsers" onmouseover="vkopt.messages.show_on_users(this)"></span>'));
          ge('countUsers').innerHTML = r.response > 0 ? ' ('+langNumeric(r.response, IDL('online_count'))+')' : '';
@@ -7027,7 +7844,7 @@ vkopt['messages'] = {
    show_on_users:  function(el){
       var chatId = cur.peer - 2000000000;
       var body_code = 'return API.messages.getChatUsers({"chat_id":'+chatId+',"fields":"photo_50,online,domain"});';
-      dApi.call('execute',{v:'5.75', code:body_code},function(r){
+      dApi.call('execute',{v:'5.131', code:body_code},function(r){
          var items='', mob='' , i=0, on = 0, u = {};
          while(r.response[i]){
             if(r.response[i]['online'] == 1){
@@ -7086,10 +7903,27 @@ vkopt['messages'] = {
          });
       });
    },
+   send_to_pm: function (el){
+      ShareBox.rbChanged(el, ShareBox.radioBtnOptions.IM);
+      var dd = cur.wdd.like_mail_dd;
+      for (var i in dd.selected)
+          WideDropdown.deselect('like_mail_dd', i.replace(/_$/, ''));
+      each(geByClass('_like_share_about_select', curBox().bodyNode), function() {
+          hide(this);
+      });
+      var ofs = radioBtns.like_share.els.push(ge('like_share_pm'));
+      radioBtns.like_share.check = true;
+      radiobtn(el, ofs, 'like_share');
+	  hide('like_share_add_media');
+	  radioBtns.like_share.val = ShareBox.radioBtnOptions.IM;
+      dd.selected = {[vk.id+'_']:[]};
+      dd.selCount = 1;
+   },
    dialogs_menu: function(){
       var menu = geByClass1('_im_settings_popup');
       if (!menu) return;
       !ge('vk_search_deleted_item') && menu.appendChild(se(vk_lib.tpl_process(vkopt.messages.tpls['search_deleted_item'])));
+      !ge('vk_search_chats_item') && menu.appendChild(se(vk_lib.tpl_process(vkopt.messages.tpls['search_chats_item'])));
    },
    acts_menu: function(){
       if (ge('vk_im_acts_sep')) return;
@@ -7127,7 +7961,12 @@ vkopt['messages'] = {
    go_to_beginning: function(){
       var sel_id = nav.objLoc['sel'];
       var cur_loc = clone(nav.objLoc);
-      dApi.call('messages.getHistory',{user_id:cur.peer, count:1, rev:1, v:'5.73'},function(r,response){
+
+      var params = {peer_id:cur.peer, count:1, rev:1, v:'5.131'};
+      if (cur.gid)
+         params['group_id'] = cur.gid;
+
+      dApi.call('messages.getHistory',params,function(r,response){
          if (!(response && response.items && response.items[0]))
             return vkMsg(IDL('Error'));
          nav.go(extend(cur_loc, {sel:''}));
@@ -7170,7 +8009,7 @@ vkopt['messages'] = {
 
          var code = [];
          while(ids.length)
-            code.push('API.messages.getById({"message_ids":"'+ids.splice(0,PER_REQ).join(',')+'"}).items');
+            code.push('API.messages.getById({"message_ids":"'+ids.splice(0,PER_REQ).join(',')+'", "v":"5.73"}).items');
          code = 'return ' + code.join('+') + ';'
 
          ge('vk_scan_msg').innerHTML = vkProgressBar(last_msg - offset, last_msg, width, IDL('MessagesScan') + ' %'+(offset > 0 ? ' (id:' + offset + ')' : ''));
@@ -7291,6 +8130,70 @@ vkopt['messages'] = {
          })
       });
    },
+   search_chats: function(offset, box){
+      vkLdr.show();
+      getChats = function(cb){
+         offset = offset || 1;
+         var chat_ids = '';
+         for(var i = offset; i <= offset+199; i++)
+            chat_ids += i+',';
+         dApi.call('messages.getChat',{chat_ids: chat_ids}, {
+            ok:function(r, res){
+                  return (!res) ? cb(false) : cb(res, true);
+            },
+            error: function(r, err){
+               var last_chat = err.error_msg.match(/\d+/)-1;
+               if(last_chat < 1) return cb(false);
+               chat_ids = '';
+               for(var i = offset; i <= last_chat; i++)
+                  chat_ids += i+',';
+               dApi.call('messages.getChat',{chat_ids: chat_ids}, function(r, res){
+                  return (!res) ? cb(false) : cb(res);
+               });
+            }
+         });
+      }
+      getChats(function(chats, next){
+         var content = '';
+         if(!chats) content = '<div class="nim-dialog--chat-null-info">' + IDL('searchEmptyChats') + '</div>';
+         else{
+            Array.prototype.sort.call(chats, function(a, b) {
+               return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+            });
+            for(var i= 0; i < chats.length; i++){
+               var chat = chats[i];
+               if(chat.is_group_channel) continue;
+               var info = IDL('clGu')+ ': ' + chat.members_count;
+               if(chat.admin_id == vk.id) info += ', ' + IDL('uAreCreator');
+               if(chat.kicked) info +=  ', ' + IDL('kickedChat');
+               if(chat.left) info += ', ' + IDL('leftChat');
+               content += vk_lib.tpl_process(vkopt.messages.tpls['chats_item'], {
+                  title:chat.title,
+                  photo:(chat.photo_50 || '/images/icons/im_multichat_50.png'),
+                  id:chat.id,
+                  info: '<div class="nim-dialog--preview">' + info + '</div>'
+               });
+            }
+         }
+         box = box || new MessageBox({
+         title : IDL('titleChats'),
+         closeButton : true,
+            width : '560px'
+         });
+         box.removeButtons()
+         box.content(content);
+         box.addButton(lang.box_close, function (r) {
+            abort = true;
+            box.hide();
+         });
+         if(next) box.addButton(IDL('ShowMore'), function (r) {
+            vkopt.messages.search_chats(offset+200, box);
+            box.hide();
+         }, 'gray');
+         vkLdr.hide();
+         box.show();
+      });
+   },
    get: function(out, offset, count, onDone) {
 		var code_body='';
 		var code_r=[];
@@ -7322,6 +8225,7 @@ vkopt['messages'] = {
          peer: peer
       });
       vkAlertBox(IDL('SaveHistory'), html, null, null, true);
+      //vkopt.messages.get_history(peer);
       return false;
    },
    make_html: function(msg,user){
@@ -7349,7 +8253,7 @@ vkopt['messages'] = {
           replacedText = replacedText.replace(replacePattern3,'$1<a href="http://$2" target="_blank">$2</a>');
 
          if (window.Emoji && Emoji.emojiToHTML)
-            replacedText = Emoji.emojiToHTML(replacedText,true).replace(/"\/images\//g,'"http://vk.com/images/') || replacedText;
+            replacedText = Emoji.emojiToHTML(replacedText,true).replace(/"\/(images|emoji)\//g,'"http://vk.com/$1/') || replacedText;
 
           return replacedText;
       };
@@ -7435,7 +8339,7 @@ vkopt['messages'] = {
       };
 		var make_geo=function(m){
 			var html='';
-         html+='<div class="attacment"> <div class="att_ico att_geo"></div> <a href="https://maps.google.ru/maps?q='+m.geo['coordinates']+'" target="_blank">'+IDL('HistMsgGeoAttach')+' '+(m.geo['place'] || {'title':'---'})['title']+'</a></div>';
+         html+='<div class="attacment"> <div class="att_ico att_geo"></div> <a href="https://www.google.ru/maps/@'+m.geo['coordinates'].replace(/\s+/, ',')+',17z" target="_blank">'+IDL('HistMsgGeoAttach')+' '+(m.geo['place'] || {'title':'---'})['title']+'</a></div>';
 			return html;
 		};
 
@@ -7619,6 +8523,7 @@ vkopt['messages'] = {
             });
          ldr && (ldr.innerHTML=vkProgressBar(100,100,w,'Export data... %'));
          show('save_btn_text');
+         val('save_btn_text', IDL('Done'));
          hide('saveldr');
 
          var file_name=[];
@@ -7637,11 +8542,38 @@ vkopt['messages'] = {
            vkopt.messages.export_data(data);
         })
    },
-   get_history:function(uid){
-      if (!uid) uid=cur.thread.id;
+   get_history_json(uid) {
+      var done = function(messages){
+         console.log(messages);
+         var json = JSON.stringify(messages, null, 2);
+         vkopt.save_file(json,"vk_messages_"+uid+".json");
+         show('save_btn_text');
+         val('save_btn_text', IDL('Done'));
+         hide('saveldr');
+      };
+
+      vkopt.messages.get_history(uid, done);
+   },
+   get_history:function(uid, callback, partial_callback, ver){
+      ver = ver || '5.73';
+      if (!uid) uid=cur.peer;
       var PER_REQ=100;
       var offset=0;
       var messages = [];
+      var concat = function(arr, prefix){
+         prefix = prefix || '';
+         var r = {};
+         for (var i = 0; i < arr.length; i++)
+            if (arr[i])
+               for (var j = 0; j < arr[i].length; j++)
+                  if (!r[prefix + arr[i][j].id])
+                     r[prefix + arr[i][j].id] = arr[i][j];
+         return r;
+      }
+
+      var continue_scan = function(){
+         setTimeout(scan,350);
+      }
       var scan=function(){
          hide('save_btn_text');
          show('saveldr');
@@ -7649,25 +8581,336 @@ vkopt['messages'] = {
          var w = getSize(ge('saveldr'),true)[0];
          if (offset==0) ge('saveldr').innerHTML=vkProgressBar(offset,10,w);
 
-         var code=[];
+         var code={
+            vars:[],
+            items:[],
+            profiles:[],
+            groups:[]
+         };
          for (var i=0; i<10; i++){
-            code.push('API.messages.getHistory({user_id:'+uid+', count:'+PER_REQ+', offset:'+offset+', rev:1}).items');//
+
+            var params = {
+               peer_id: uid,
+               offset: offset,
+               count: PER_REQ,
+               extended: 1,
+               rev: 1,
+               v: ver
+            };
+            if (cur.gid)
+               params['group_id'] = cur.gid
+
+            var vname = 'part' + code.vars.length;
+            code.vars.push('var '+vname+' = API.messages.getHistory('+JSON.stringify(params)+')');
+            code.items.push(vname+'.items');
+            code.profiles.push(vname+'.profiles');
+            code.groups.push(vname+'.groups');
             offset+=PER_REQ;
          }
-         dApi.call('execute',{code:'return {count:API.messages.getHistory({user_id:'+uid+', count:0, offset:0}).count, items:'+code.join('+')+'};',v:'5.73'},function(r){
+
+         var params = {
+            peer_id: uid,
+            offset: 0,
+            count: 0,
+            v: ver
+         };
+         if (cur.gid)
+            params['group_id'] = cur.gid
+
+         dApi.call('execute',{
+               code: code.vars.join(';') + ';'+
+                     'return {'+
+                        'count:API.messages.getHistory('+JSON.stringify(params)+').count,'+
+                        'items:'+code.items.join('+')+','+
+                        'profiles:['+code.profiles.join(',')+'],'+
+                        'groups:['+code.groups.join(',')+']'+
+                     '};',
+               v:'5.95'
+            },
+            function(r){
             var msgs = r.response.items;
             var count = r.response.count;
             ge('saveldr').innerHTML=vkProgressBar(offset,count,w);
 
-            messages = messages.concat(msgs);
+            if (partial_callback)
+               partial_callback({
+                  count: r.response.count,
+                  messages: r.response.items,
+                  authors: extend(concat(r.response.profiles), concat(r.response.groups,'-'))
+               });
+            else
+               messages = messages.concat(msgs);
+
             if (msgs.length>0){
-               setTimeout(scan,350);
+               !partial_callback && continue_scan();
             } else {
-               vkopt.messages.export_data(messages);
+               if (partial_callback){
+                  partial_callback(null);
+               } else {
+                  callback ? callback(messages) : vkopt.messages.export_data(messages);
+               }
             }
          });
       };
       scan();
+      return continue_scan;
+   },
+   zip: {
+      txt: function(peer_id, show_format){
+         if (!peer_id)
+            peer_id=cur.thread.id;
+         var msg_pattern = vkopt.settings.get('msg_exp_pattern')  ||  vkopt_defaults.config.SAVE_MSG_HISTORY_PATTERN;
+         var date_fmt = vkopt.settings.get('msg_exp_date_fmt') || vkopt_defaults.config.SAVE_MSG_HISTORY_DATE_FORMAT;
+         msg_pattern=msg_pattern.replace(/\r?\n/g,'\r\n');
+         date_fmt=date_fmt.replace(/\r?\n/g,'\r\n');
+
+         var continue_scan = function(){vkopt.log('something went wrong')};
+         var zipname = "messages_" + peer_id + ".txts.zip";
+         var zip = null;
+         var cnt = 0;
+         var total = 0;
+         var zip_item = function(item, cb){
+
+            var num = ('0000000000'+(cnt++)).substr(-String(Math.ceil(total/1000)).length);
+            var name = '#' + num + ' ' +
+                       (item.start ? (new Date(item.start)).format('dd.mm.yyyy_HH.MM') + ' - ' : '') +
+                       (item.end ? (new Date(item.end)).format('dd.mm.yyyy_HH.MM') : '') +  '.txt';
+            vkopt.log('Zip messages part ' + name + ' (size: '+ item.content.length +')');
+            zip.addFile(name, new Blob([item.content], {type:'plain/text'}), function(){
+               delete item.content;
+               cb && cb();
+            });
+         }
+
+
+         var queue = [];
+         var busy = false;
+         var finished = false;
+         var tick_inteval;
+         var tick = function(){
+            if (!busy && queue.length){
+               busy = true;
+               zip_item(queue.shift(), function(){
+                  busy = false;
+                  continue_scan();
+               })
+            }
+            if (!queue.length && finished){
+               clearInterval(tick_inteval);
+               done();
+            }
+         }
+         tick_inteval = setInterval(tick,10);
+         var getName = function(cb){
+            dApi.call('messages.getConversationsById',{peer_ids: peer_id, group_id: cur.gid || undefined, extended:1, v:'5.103'},function(resp, r){
+               var items, item;
+               if (r && (items = r.items) && (item = items[0])){
+                  if (item.chat_settings){
+                     cb({
+                        filename: vkCleanFileName(items[0].chat_settings.title).substr(0,250)
+                     })
+                  } else {
+                     var file_name=[],
+                         names = {};
+                     var pr  = r.profiles;
+                     var gr = r.groups;
+                     if (pr)
+                        for (var i = 0; i < pr.length; i++){
+                           var u = pr[i];
+                           names['_'+u.id] = u.first_name+" "+u.last_name;
+                        }
+                     if (gr)
+                        for (var i = 0; i < gr.length; i++){
+                           var g = gr[i];
+                           names['_'+g.id] = g.name;
+                        }
+                     for (var key in names){
+                        var id = parseInt((key || '_0').substr(1));
+                        if (!(window.vk && id == vk.id))
+                           file_name.push(names[key]+'('+id+')');
+                     }
+
+                     cb({
+                        filename: vkCleanFileName(file_name.join(',') || 'unknown_' + peer_id).substr(0,250)
+                     })
+                  }
+               } else {
+                  cb({
+                     filename: 'unknown_'+peer_id
+                  })
+               }
+            });
+         }
+
+         var done=function(){
+            vkopt.log('Download messages .txt.zip');
+            //TODO: export zip
+            zip.download();
+            val('saveldr', IDL('Done'));
+         };
+         var part_ready = function(data){
+            // data = { count, messages, authors}
+            if (!data || !data.messages.length){
+               finished = true;
+               return;
+            }
+            total = data.count;
+
+            var tab='\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t';
+            var join_info = function(arr, level){
+               var sp = tab.substr(0,level);
+               return sp + (arr.filter(function(i){return !!i}).join('\r\n' + sp)) ;
+            }
+            var getUserInfo = function(id, obj){
+               var u = data.authors[id];
+               if (!data.authors[id])
+                  return (id > 0 ? 'id' : 'club') + id + ' DELETED'
+               if (u)
+                  return (u.name || (u.first_name + ' ' + u.last_name)) + ' [' + u.screen_name + ']' ;
+            }
+            var make_msg = function(msg,level){
+               level=level || 0;
+               var from_id= msg.from_id;
+               /*
+               if (!data.authors[from_id])
+                  data.authors[from_id] = (from_id > 0 ? 'id' : 'club') + from_id + ' DELETED';
+               */
+               var attach_text="";
+               for (var j=0; msg.attachments && j<msg.attachments.length;j++){
+                  var attach=msg.attachments[j];
+                  var a = attach[attach.type];
+                  var link;
+                  switch(attach.type){
+                     case  "photo":
+                        link = "vk.com/photo"+a.owner_id+'_'+a.id;
+                        var album = "vk.com/album"+a.owner_id+'_'+a.album_id;
+                        attach_text += link+" : "+vk_lib.api.photo.max_size(a)+"\r\n"+
+                                    join_info(['From: '+album, a.text],1)
+                        break;
+                     case  "video":
+                        link = "vk.com/video"+a.owner_id+'_'+a.id;
+                        attach_text += link+" : "+"\r\n"+
+                                    join_info([a.title, a.description,a.platform, a.player],1);
+                        break;
+                     case  "audio":
+                        link = "vk.com/audio?id="+a.owner_id+'&audio_id='+a.aid;
+                        attach_text += link+" : "+(a.performer || "")+" - "+(a.title || "");
+                        break;
+                     case  "doc":
+                        attach_text += a.url+" : "+a.title;
+                        break;
+                     case  "link":
+                        attach_text += a.url+" : "+a.title+"\r\n"+
+                                     join_info([a.caption, a.description, vk_lib.api.photo.max_size(a.photo)],1);
+                        break;
+                     case  "market":
+                        link = "vk.com/market?w=product"+a.owner_id+"_"+a.id;
+                        attach_text += link+" : "+join_info([a.title, a.description,(a.price || {}).text, a.player, a.thumb_photo],1);
+                        break;
+                     case  "market_album":
+                        link = "vk.com/market"+a.owner_id+"?section=album_"+a.id;
+                        attach_text += link+" : "+a.title + "\r\n" + vk_lib.api.photo.max_size(a.photo);
+                        break;
+                     case  "wall":
+                        attach_text += "vk.com/wall" + (a.owner_id || a.to_id) + "_" + a.id;
+                        break;
+                     case  "wall_reply":
+                        attach_text += "vk.com/wall" + a.owner_id + "_" + a.post_id + "?reply=" + a.id +
+                                       (a.parents_stack ? "&thread=" + a.parents_stack[0] : "");
+                        break;
+                     case  "sticker":
+                        attach_text += "Sticker #" + a.sticker_id + ": " +
+                                       ((a.images || [])[0] || {}).url;
+                        break;
+                     case  "gift":
+                        attach_text += "Gift [" + a.id + "]: " + a.thumb_256;
+                        break;
+
+                     default:
+                       attach_text+=JSON.stringify(attach);
+
+                  }
+                  attach_text+='\r\n'
+
+               }
+
+               if (msg.geo)
+                  attach_text += (msg.geo['place'] || {'title':'---'})['title'] + ': https://www.google.com/maps/@'+Object.values(msg.geo['coordinates']).join(',')+',17z';
+
+               var date=(new Date(msg.date*1000)).format(date_fmt);
+               var user=getUserInfo(from_id);//(msg.from_id==mid?user2:user1);
+               var msgBody = msg.text.replace(/<br>/g, '\r\n');
+               if (msg.reply_message)
+                  msgBody = make_msg(msg.reply_message,level+1) + msgBody;
+
+               if (msg.action){
+                  var act_info = [];
+
+                  if (msg.action.type)
+                     act_info.push(msg.action.type);
+
+                  if (msg.action.member_id)
+                     act_info.push(getUserInfo(msg.action.member_id));
+
+                  msg.action.text && act_info.push(msg.action.text);
+                  msg.action.email && act_info.push(msg.action.email);
+                  msg.action.photo && act_info.push(msg.action.photo.photo_200);
+
+                  msgBody += '\r\n' + act_info.join(' | ') + '\r\n';
+               }
+
+               var ret=msg_pattern
+                    .replace(/%username%/g,user) //msg.from_id
+                    .replace(/%date%/g,    date)
+                    .replace(/%message%/g, msgBody)
+                    .replace(/%attachments%/g, (attach_text!=""?"Attachments:[\r\n"+attach_text+"]":""));
+
+               ret=ret.replace(/^.+$/mg,tab.substr(0,level)+"$&");
+               if (msg.fwd_messages)
+               for (var i=0; i<msg.fwd_messages.length; i++)
+                  ret+=make_msg(msg.fwd_messages[i],level+1);
+               return ret;
+            };
+            var res = '';
+            for (var i = 0; i < data.messages.length; i++){
+               res += make_msg(data.messages[i]);
+            }
+
+            queue.push({
+               start: (data.messages.shift() || {}).date*1000,
+               end: (data.messages.pop() || {}).date*1000,
+               content:res
+            })
+         }
+         var run = function(){
+            getName(function(info){
+               zip = vkopt.zip(info.filename + '.zip');
+               continue_scan = vkopt.messages.get_history(peer_id, done, part_ready, '5.103');
+            })
+         }
+         if (show_format){
+            var aBox = new MessageBox({title: IDL('SaveHistoryCfg')});
+            aBox.removeButtons();
+            aBox.addButton(IDL('Hide'), aBox.hide, 'no');
+            aBox.addButton(IDL('OK'),function(){
+               msg_pattern=ge('vk_msg_fmt').value;
+               date_fmt=ge('vk_msg_date_fmt').value;
+               msg_pattern=msg_pattern.replace(/\r?\n/g,'\r\n');
+               date_fmt=date_fmt.replace(/\r?\n/g,'\r\n');
+               vkopt.settings.set('msg_exp_pattern', msg_pattern);
+               vkopt.settings.set('msg_exp_date_fmt', date_fmt);
+               aBox.hide();
+               run();
+            },'yes');
+
+            var html = vk_lib.tpl_process(vkopt.messages.tpls['msg_exp_txt_cfg'],{
+               msg_pattern: msg_pattern,
+               date_fmt: date_fmt
+            })
+            aBox.content(html);
+            aBox.show();
+         } else run();
+      }
    },
    get_history_txt: function(uid,show_format){
       if (!uid) uid=cur.thread.id;
@@ -7771,11 +9014,11 @@ vkopt['messages'] = {
       };
       var run=function(){
             collect(function(t){
-               dApi.call('getProfiles',{uids:users_ids.join(',')/*remixmid()+','+uid*/},function(r){
+               dApi.call('users.get',{user_ids:users_ids.join(',')/*remixmid()+','+uid*/},function(r){
                   var file_name=[];
                   for (var i=0;i<r.response.length;i++){
                      var u=r.response[i];
-                     users['%'+u.uid+'%']=u.first_name+" "+u.last_name;
+                     users['%'+u.id+'%']=u.first_name+" "+u.last_name;
 
                   }
                   for (var key in users){
@@ -7819,8 +9062,6 @@ vkopt['messages'] = {
    }
 };
 
-
-//"UploadPngDocAsGraffiti": "Загрузить .PNG как граффити"
 vkopt['attacher'] = {
    tpls: null,
    css: function(){
@@ -7983,13 +9224,14 @@ vkopt['attacher'] = {
    onResponseAnswer: function(answer, url, q){
       if (!vkopt.settings.get('attach_media_by_id'))
             return;
+      //TODO: repair
       if (url == '/audio' && q.act == 'a_choose_audio_box' && !q.q && answer[2] && answer[2].replace){
          if (answer[2].indexOf('vkopt.attacher.audio.check_query') == -1)
             answer[2] = answer[2].replace(/(cur\.onChangeAudioQuery\s*=\s*function[^\{]+\{([\r\n\s]*))/,'$1vkopt.attacher.audio.check_query(arguments[0]);$2');
             answer[2] = answer[2].replace(/(box\.hideCloseProgress\(\);)/,'$1\n   vkopt.attacher.audio.check_query(cur.chooseAudioQuery);');
       }
 
-      if (url == '/docs.php' && q.act == 'a_choose_doc_box' && !q.switch_tab && isString(answer[1])){
+      if (url == 'docs.php' && q.act == 'a_choose_doc_box' && !q.switch_tab && isString(answer[1])){
          // answer:
          // [0] - box title content
          // [1] - box body content
@@ -8219,6 +9461,9 @@ vkopt['face'] =  {
       },
 
       vkInterface:{
+         hold_menu: {
+            title:'seFixLeftMenu'
+         },
          ad_block:{
             title: 'seADRem',
             class_toggler: true
@@ -8234,6 +9479,18 @@ vkopt['face'] =  {
          },
          ru_vk_logo:{
             title: 'seVkontakteLogo',
+            class_toggler: true
+         },
+         rn_label_groups:{
+            title: 'seRnLabelCommunities',
+            class_toggler: true
+         },
+         rn_label_im:{
+            title: 'seRnLabelMessenger',
+            class_toggler: true
+         },
+         old_icon_verify:{
+            title: 'seChIconVerify',
             class_toggler: true
          },
          /*
@@ -8254,6 +9511,10 @@ vkopt['face'] =  {
             title:"seHideStories",
             class_toggler: true
          },
+         hide_msg_recommendations:{
+            title:"seHideMsgRecs",
+            class_toggler: true
+         },
          shift_page: {
             title: 'seShiftPageButtons',
             class_toggler: true,
@@ -8266,10 +9527,6 @@ vkopt['face'] =  {
          },
          compact_like_btns: {
             title: 'seCompactLikeBtns',
-            class_toggler: true
-         },
-         reverse_comments:{
-            title: 'seReverseComments',
             class_toggler: true
          }
       },
@@ -8297,8 +9554,15 @@ vkopt['face'] =  {
          anonimize: {
             class_toggler: true
          },
+         skip_phone_validation: {
+            description: "Auto skip phone validations box and show captcha immediately"
+         },
          shift_page_type:{
             default_value: 0
+         },
+         hide_connect_box: {
+            default_value: true,
+            class_toggler: true
          }
       }
    },
@@ -8312,8 +9576,14 @@ vkopt['face'] =  {
          .vk_ad_block .feed_row .post[data-ad]{
             display: none;
          }
-         .vk_disable_border_radius body *{
+         .vk_disable_border_radius body *,
+         .vk_disable_border_radius body *::after,
+         .vk_disable_border_radius body *::before{
             border-radius: 0px !important;
+         }
+         .vk_disable_border_radius[dir] .audio_row .audio_row__play_btn {
+            background-image: url(data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%3Cpath%20fill%3D%22%23FFF%22%20d%3D%22M9.846%2016.86c-.467.303-.846.097-.846-.45V7.588c0-.551.38-.752.846-.45l6.91%204.48c.324.21.327.549%200%20.761l-6.91%204.48z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E);
+            background-color: #5181B8;
          }
 
          .vk_old_audio_btns .audio_row {
@@ -8436,6 +9706,16 @@ vkopt['face'] =  {
          .vk_compact_audio.vk_old_audio_btns .audio_pl_edit_box .ape_audio_item_wrap .ape_attach{
             margin-top: 3px;
          }
+         .vk_compact_audio.vk_old_audio_btns .audio_numeric .audio_row .audio_row__cover_icon{
+            height: 27px;
+         }
+         .vk_compact_audio.vk_old_audio_btns .audio_numeric .audio_row .audio_row__counter{
+            height: 23px;
+            padding: 5px 0;
+         }
+         .vk_compact_audio.vk_old_audio_btns .audio_pl_edit_box .ape_check {
+            padding: 1px 5px;
+         }
          .vk_audio_full_title.vk_old_audio_btns .audio_row .audio_title_wrap,
          .vk_audio_full_title.vk_old_audio_btns .audio_row .audio_performer{
             white-space: normal;
@@ -8557,8 +9837,11 @@ vkopt['face'] =  {
          .vk_hide_stories #stories_feed_wrap {
             display: none;
          }
+         .vk_hide_msg_recommendations .ConvoRecommendList {
+            display: none;
+         }
          #vk_online_status > * {
-            margin-top: 15px;
+            margin-top: 19px;
             border-radius: 50%;
             border: 1px solid rgba(255,255,255,0.5);
             height: 8px;
@@ -8619,7 +9902,8 @@ vkopt['face'] =  {
          .vk_anonimize .fc_contact_name,
          .vk_anonimize .im-mess-stack--lnk,
          .vk_anonimize ._im_ui_peers_list .im-right-menu--text,
-         .vk_anonimize .im-page--peer{
+         .vk_anonimize .im-page--peer,
+         .vk_anonimize .im-page-pinned--name{
             -webkit-filter: blur(4px);
             filter: blur(4px);
          }
@@ -8707,17 +9991,39 @@ vkopt['face'] =  {
          }
 
 
-         .vk_invert #page_layout,
-         .vk_invert #ts_cont_wrap,
-         .vk_invert #top_profile_menu.shown,
+         html.vk_invert,
+         .vk_invert .top_home_logo,
+         .vk_invert _#ts_wrap,
+         .vk_invert .head_nav_item_player,
+         .vk_invert #top_profile_link,
+         .vk_invert #notifiers_wrap,
+         .vk_invert .top_nav_btn#top_notify_btn.active .top_nav_btn_icon,
+         .vk_invert .top_nav_btn#top_notify_btn.has_notify .top_nav_btn_icon,
+         .vk_invert #top_notify_count,
+         .vk_invert .like_tt,
+         .vk_invert #box_layer_bg,
+         .vk_invert .ap_layer_bg_dark,
+         .vk_invert #stories_layers_background,
+         .vk_invert .stories_preview[style],
+         .vk_invert .stories_photo[style],
+         .vk_invert .stories_item_cont,
+         .vk_invert .stories_bottom_wrap,
+
+         .vk_invert #mv_layer_wrap,
+         .vk_invert #layer_bg,
+         .vk_invert #pv_box,
          .vk_invert .pv_narrow_column_wrap,
-         .vk_invert #box_layer,
-         .vk_invert #wk_layer,
-         .vk_invert .article_layer _article_layer,
-         .vk_invert .head_nav_btns,
-         .vk_invert #chat_onl_wrap,
-         .vk_invert .ap_layer{
-             filter: invert(100);
+         _.vk_invert .videoplayer_thumb,
+         .vk_invert .medadd_c_linkimg_container,
+         .vk_invert .app_widget_image,
+
+         .vk_invert .widget_body,
+
+         .vk_invert #vk_online_status,
+         .vk_invert .vk_page_shift_left,
+         .vk_invert .vk_page_shift_right
+         {
+             filter: invert(1);
          }
 
          .vk_invert body,
@@ -8750,6 +10056,18 @@ vkopt['face'] =  {
          .vk_invert .apps_recent_row,
          .vk_invert .apps_featured_slides,
          .vk_invert .inline_video_wrap,
+
+         .vk_invert .online:after,
+         .vk_invert .fc_clist_online,
+
+         .vk_invert .post .podcast_snippet,
+         .vk_invert .wl_post .podcast_snippet,
+         .vk_invert .Button--negative,
+         .vk_invert .Button--positive,
+         .vk_invert .bookmark_unseen,
+
+         .vk_invert .group_friends_images,
+         .vk_invert .fc_msgs_img,
          .vk_invert .stories_feed_preview_item,
          .vk_invert .page_media_link_thumb,
          .vk_invert .page_doc_photo,
@@ -8762,15 +10080,28 @@ vkopt['face'] =  {
          .vk_invert .media_voting_bg_gradient,
          .vk_invert .audio_pl__cover,
          .vk_invert .audio_artist_block__cover,
+         .vk_invert .audio_pl_edit_box .ape_cover_thumb,
+         .vk_invert .page_album_title,
+         .vk_invert .videoplayer_end_info_author_photo,
+         .vk_invert .audio_promo__link
          .vk_invert .audio_row__cover_back {
-             filter: invert(100);
+             filter: invert(1);
          }
          .vk_invert .top_profile_img,
+         .vk_invert .notifier_add_image,
          .vk_invert .like_tt_image,
          .vk_invert .media_voting_bg_photo img,
          .vk_invert .media_voting_bg_gradient img,
          .vk_invert img.notifier_image,
-         .vk_invert .ap_layer canvas{
+         .vk_invert .thumb img.cell_img,
+         .vk_invert .ap_layer canvas,
+         .vk_invert #pv_box.photos_is_albums_view,
+
+         .vk_invert .widget_body img,
+         .vk_invert .widget_body canvas,
+         .vk_invert .widget_body svg
+
+         {
              filter: invert(0);
          }
          .vk_invert .photos_container .photos_row{
@@ -8778,33 +10109,66 @@ vkopt['face'] =  {
          }
 
          .vk_invert #page_header_cont .back {
-             background: #040404;
-             border-color: #404040;
+             background: #e7e7e7;
+             border-color: #cbcaca;
          }
+         .vk_invert .group_friends_image,
          .vk_invert .top_notify_count{
              background: #404040;
              border-color: #000;
          }
 
          .vk_invert input.text.ts_input{
-             background-color:#333;
+             background-color:#f8f8f8;
+         }
+         .vk_invert input.text.ts_input:focus{
+            background-color: #FFF;
+            color: #000;
+         }
+         .vk_invert .top_audio_player:hover,
+         .vk_invert .top_nav_link:hover {
+            background-color: #2f2f2f;
+         }
+
+         .vk_rn_label_groups #l_gr .left_label, .vk_rn_label_im #l_msg .left_label{
+            visibility: hidden;
+         }
+
+         .vk_old_icon_verify .page_verified{
+            background: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2016%2016%22%3E%0A%20%20%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%0A%20%20%20%20%3Cpath%20fill%3D%22%2374A2D6%22%20d%3D%22M5.82331983%2C14.8223666%20L4.54259486%2C15.0281417%20C4.15718795%2C15.0900653%203.78122933%2C14.8730055%203.64215331%2C14.5082715%20L3.17999726%2C13.2962436%20C3.09635683%2C13.0768923%202.92310766%2C12.9036432%202.70375635%2C12.8200027%20L1.49172846%2C12.3578467%20C1.12699447%2C12.2187707%200.909934662%2C11.842812%200.971858288%2C11.4574051%20L1.17763336%2C10.1766802%20C1.21487428%2C9.94489615%201.15146068%2C9.70823338%201.00331709%2C9.52612299%20L0.184748166%2C8.51987017%20C-0.0615827221%2C8.21705981%20-0.0615827221%2C7.78294019%200.184748166%2C7.48012983%20L1.00331709%2C6.47387701%20C1.15146068%2C6.29176662%201.21487428%2C6.05510385%201.17763336%2C5.82331983%20L0.971858288%2C4.54259486%20C0.909934662%2C4.15718795%201.12699447%2C3.78122933%201.49172846%2C3.64215331%20L2.70375635%2C3.17999726%20C2.92310766%2C3.09635683%203.09635683%2C2.92310766%203.17999726%2C2.70375635%20L3.64215331%2C1.49172846%20C3.78122933%2C1.12699447%204.15718795%2C0.909934662%204.54259486%2C0.971858288%20L5.82331983%2C1.17763336%20C6.05510385%2C1.21487428%206.29176662%2C1.15146068%206.47387701%2C1.00331709%20L7.48012983%2C0.184748166%20C7.78294019%2C-0.0615827221%208.21705981%2C-0.0615827221%208.51987017%2C0.184748166%20L9.52612299%2C1.00331709%20C9.70823338%2C1.15146068%209.94489615%2C1.21487428%2010.1766802%2C1.17763336%20L11.4574051%2C0.971858288%20C11.842812%2C0.909934662%2012.2187707%2C1.12699447%2012.3578467%2C1.49172846%20L12.8200027%2C2.70375635%20C12.9036432%2C2.92310766%2013.0768923%2C3.09635683%2013.2962436%2C3.17999726%20L14.5082715%2C3.64215331%20C14.8730055%2C3.78122933%2015.0900653%2C4.15718795%2015.0281417%2C4.54259486%20L14.8223666%2C5.82331983%20C14.7851257%2C6.05510385%2014.8485393%2C6.29176662%2014.9966829%2C6.47387701%20L15.8152518%2C7.48012983%20C16.0615827%2C7.78294019%2016.0615827%2C8.21705981%2015.8152518%2C8.51987017%20L14.9966829%2C9.52612299%20C14.8485393%2C9.70823338%2014.7851257%2C9.94489615%2014.8223666%2C10.1766802%20L15.0281417%2C11.4574051%20C15.0900653%2C11.842812%2014.8730055%2C12.2187707%2014.5082715%2C12.3578467%20L13.2962436%2C12.8200027%20C13.0768923%2C12.9036432%2012.9036432%2C13.0768923%2012.8200027%2C13.2962436%20L12.3578467%2C14.5082715%20C12.2187707%2C14.8730055%2011.842812%2C15.0900653%2011.4574051%2C15.0281417%20L10.1766802%2C14.8223666%20C9.94489615%2C14.7851257%209.70823338%2C14.8485393%209.52612299%2C14.9966829%20L8.51987017%2C15.8152518%20C8.21705981%2C16.0615827%207.78294019%2C16.0615827%207.48012983%2C15.8152518%20L6.47387701%2C14.9966829%20C6.29176662%2C14.8485393%206.05510385%2C14.7851257%205.82331983%2C14.8223666%20L5.82331983%2C14.8223666%20Z%22%2F%3E%0A%20%20%20%20%3Cpolyline%20stroke%3D%22%23FFFFFF%22%20stroke-width%3D%221.6%22%20points%3D%224.755%208.252%207%2010.5%2011.495%206.005%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E") no-repeat 0;
+         }
+         .vk_old_icon_verify .feed_notifications .page_verified, .vk_old_icon_verify .post_author .page_verified, .vk_old_icon_verify .reply_author .page_verified, .vk_old_icon_verify .top_notify_cont .page_verified, .vk_old_icon_verify .top_tt_important .page_verified, .vk_old_icon_verify .ts_cont_wrap .page_verified, .vk_old_icon_verify .nim-dialog.nim-dialog_verified .nim-dialog--verfifed, .vk_old_icon_verify .im-page--chat-header_verified .im-page--title-main-verified, .vk_old_icon_verify .stories_author .page_verified {
+            background: url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2214%22%20height%3D%2214%22%20viewBox%3D%220%200%2014%2014%22%3E%0A%20%20%3Cg%20fill%3D%22none%22%20fill-rule%3D%22evenodd%22%3E%0A%20%20%20%20%3Cpath%20fill%3D%22%2374A2D6%22%20d%3D%22M5.09540485%2C12.9695708%20L3.9747705%2C13.149624%20C3.63753946%2C13.2038072%203.30857566%2C13.0138798%203.18688414%2C12.6947376%20L2.78249761%2C11.6342132%20C2.70931223%2C11.4422808%202.55771921%2C11.2906878%202.36578681%2C11.2175024%20L1.3052624%2C10.8131159%20C0.986120165%2C10.6914243%200.796192829%2C10.3624605%200.850376002%2C10.0252295%20L1.03042919%2C8.90459515%20C1.06301499%2C8.70178413%201.0075281%2C8.49470421%200.877902454%2C8.33535762%20L0.161654645%2C7.4548864%20C-0.0538848818%2C7.18992734%20-0.0538848818%2C6.81007266%200.161654645%2C6.5451136%20L0.877902454%2C5.66464238%20C1.0075281%2C5.50529579%201.06301499%2C5.29821587%201.03042919%2C5.09540485%20L0.850376002%2C3.9747705%20C0.796192829%2C3.63753946%200.986120165%2C3.30857566%201.3052624%2C3.18688414%20L2.36578681%2C2.78249761%20C2.55771921%2C2.70931223%202.70931223%2C2.55771921%202.78249761%2C2.36578681%20L3.18688414%2C1.3052624%20C3.30857566%2C0.986120165%203.63753946%2C0.796192829%203.9747705%2C0.850376002%20L5.09540485%2C1.03042919%20C5.29821587%2C1.06301499%205.50529579%2C1.0075281%205.66464238%2C0.877902454%20L6.5451136%2C0.161654645%20C6.81007266%2C-0.0538848818%207.18992734%2C-0.0538848818%207.4548864%2C0.161654645%20L8.33535762%2C0.877902454%20C8.49470421%2C1.0075281%208.70178413%2C1.06301499%208.90459515%2C1.03042919%20L10.0252295%2C0.850376002%20C10.3624605%2C0.796192829%2010.6914243%2C0.986120165%2010.8131159%2C1.3052624%20L11.2175024%2C2.36578681%20C11.2906878%2C2.55771921%2011.4422808%2C2.70931223%2011.6342132%2C2.78249761%20L12.6947376%2C3.18688414%20C13.0138798%2C3.30857566%2013.2038072%2C3.63753946%2013.149624%2C3.9747705%20L12.9695708%2C5.09540485%20C12.936985%2C5.29821587%2012.9924719%2C5.50529579%2013.1220975%2C5.66464238%20L13.8383454%2C6.5451136%20C14.0538849%2C6.81007266%2014.0538849%2C7.18992734%2013.8383454%2C7.4548864%20L13.1220975%2C8.33535762%20C12.9924719%2C8.49470421%2012.936985%2C8.70178413%2012.9695708%2C8.90459515%20L13.149624%2C10.0252295%20C13.2038072%2C10.3624605%2013.0138798%2C10.6914243%2012.6947376%2C10.8131159%20L11.6342132%2C11.2175024%20C11.4422808%2C11.2906878%2011.2906878%2C11.4422808%2011.2175024%2C11.6342132%20L10.8131159%2C12.6947376%20C10.6914243%2C13.0138798%2010.3624605%2C13.2038072%2010.0252295%2C13.149624%20L8.90459515%2C12.9695708%20C8.70178413%2C12.936985%208.49470421%2C12.9924719%208.33535762%2C13.1220975%20L7.4548864%2C13.8383454%20C7.18992734%2C14.0538849%206.81007266%2C14.0538849%206.5451136%2C13.8383454%20L5.66464238%2C13.1220975%20C5.50529579%2C12.9924719%205.29821587%2C12.936985%205.09540485%2C12.9695708%20L5.09540485%2C12.9695708%20Z%22%2F%3E%0A%20%20%20%20%3Cpolyline%20stroke%3D%22%23FFFFFF%22%20stroke-width%3D%221.5%22%20points%3D%224.25%207.25%206%209%209.75%205.25%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E") no-repeat 0;
+         }
+         .vk_old_icon_verify .page_top_author, .vk_old_icon_verify .page_verified{
+            padding: 2px 16px 2px 0;
+         }
+         .vk_old_icon_verify .feed_notifications .page_top_author, .vk_old_icon_verify .feed_notifications .page_verified, .vk_old_icon_verify .post_author .page_top_author, .vk_old_icon_verify .post_author .page_verified, .vk_old_icon_verify .reply_author .page_top_author, .vk_old_icon_verify .reply_author .page_verified, .vk_old_icon_verify .top_notify_cont .page_top_author, .vk_old_icon_verify .top_notify_cont .page_verified, .vk_old_icon_verify .top_tt_important .page_top_author, .vk_old_icon_verify .top_tt_important .page_verified, .vk_old_icon_verify .ts_cont_wrap .page_top_author, .vk_old_icon_verify .ts_cont_wrap .page_verified {
+            padding: 7px 14px 7px 0;
+         }
+         .vk_old_icon_verify .nim-dialog.nim-dialog_verified .nim-dialog--verfifed, .vk_old_icon_verify .im-page--chat-header_verified .im-page--title-main-verified, .vk_old_icon_verify .stories_author .page_top_author, .vk_old_icon_verify .stories_author .page_verified {
+            width:14px !important;
+            height:14px !important;
          }
 
          */
       });
       var progress_bar = vk_lib.get_block_comments(vkProgressBar).css;
+      var rename_labels = '.vk_rn_label_groups #l_gr .left_label:before{visibility: visible; content: "'+ IDL('Groups') +'";}'+
+                          '.vk_rn_label_im  #l_msg .left_label:before{visibility: visible; content: "'+ IDL('Messages') +'";}';
 
-      return codes.main + progress_bar;
+      return codes.main + progress_bar + rename_labels;
    },
    onResponseAnswer: function(answer, url, q){
       // запихиваем свой обработчик в момент получения данных о видео.
-      if (url == '/al_video.php' && q.act == 'show'){
+      if (url == 'al_video.php' && q.act == 'show'){
          if (answer[2])
             answer[2] = answer[2].replace(/(var\s*isInline)/,'\n   vkopt.face.ad_block.video(vars);\n $1');
-         if (answer[5] && answer[5].mvData && vkopt.settings.get('ad_block')){
-            answer[5]['no_ads'] = 1;
-            answer[5].player && answer[5].player.params && each(
-               answer[5].player.params,
+         var obj = answer[4] && answer[4].mvData ? answer[4] : answer[5];
+         if (obj && obj.mvData && vkopt.settings.get('ad_block')){
+            obj['no_ads'] = 1;
+            obj.player && obj.player.params && each(
+               obj.player.params,
                function(i,item){
                   item['no_ads'] = 1;
                }
@@ -8812,15 +10176,37 @@ vkopt['face'] =  {
          }
 
       }
+
+      if (
+         vkopt.settings.get('skip_phone_validation')
+         && url == "activation.php"
+         && q && q.act == "validate_box"
+         && answer && /validationShowCaptcha/.test(answer[2])
+      ){
+         answer[2] += ";setTimeout(cur.validationShowCaptcha, 50);"
+      }
+
+      setTimeout(vkopt.face.deconnect, 50);
    },
    onLibFiles: function(fn){
+      if (fn == 'common.js')
+         Inj.End('setDocumentTitle', function(){
+            var label_id = ['groups', 'im'].indexOf(nav.objLoc[0]);
+            if (label_id > -1 && vkopt.settings.get('rn_label_'+nav.objLoc[0])) 
+            return window.document.title = IDL(['Groups', 'Messages'][label_id]);
+         });
       if (fn == 'audioplayer.js')
          vkopt.face.ad_block.audio();
       if (fn == 'videoplayer.js')
          vkopt.face.ad_block.videoplayer();
+      if (fn == 'page_layout.js')
+         vkopt.settings.get('hold_menu') && setTimeout(function(){
+            Inj.End('Object.getPrototypeOf(__leftMenu).handleScrollDown', vkopt.face.side_bar_holder)
+         }, 300);
    },
    onLocation: function(){
       vkopt.face.user_online_status();
+      setTimeout(vkopt.face.deconnect, 50);
    },
    ad_block: {
       video: function(vars){
@@ -8835,7 +10221,14 @@ vkopt['face'] =  {
       },
       audio: function(){
          if (vkopt.settings.get('ad_block'))
-            Inj.Start('AudioPlayer.prototype._adsIsAllowed','if (vkopt.settings.get("ad_block")) return AudioPlayer.ADS_ALLOW_DISABLED;');
+            Inj.Start('Object.getPrototypeOf(getAudioPlayer().ads)._isAllowed',function(){
+               if (!vkopt.settings.get("ad_block")) return;
+               this.prevent = true;
+               this.prevent_all = true;
+               this.return_result = {
+                  type: 1//AudioPlayer.ADS_ALLOW_DISABLED
+               }
+            });
       }
    },
    onInit: function() {
@@ -8844,6 +10237,7 @@ vkopt['face'] =  {
       vkopt.face.inv_top_menu_item();
       if (vkopt.settings.get('shift_page_type') != 0)
          vkopt.face.shift_page.shift(vkopt.settings.get('shift_page_type'));
+      setTimeout(vkopt.face.deconnect, 50);
    },
    onCmd: function(data){
       if (data.act == 'user_online_status')
@@ -8852,30 +10246,16 @@ vkopt['face'] =  {
    onOptionChanged: function(option_id, val, option_data){
       if (option_id == 'show_online_status')
          vkopt.face.user_online_status();
+
+      if (option_id == 'hold_menu')
+         window.__leftMenu && vkopt.face.onLibFiles('page_layout.js');
       vkopt.face.shift_page.btn();
    },
-   processNode: function(node, params){
-      if(!vkopt.settings.get('reverse_comments')) return;
-      var nodes = geByClass('replies_next_main', node);
-      if(!nodes) return;
-      for(var i=0; i<nodes.length; i++){
-         var more = nodes[i];
-         var post = more.href.match(/wall(.+)/i) || [];
-         var parentMore = more.parentNode;
-         var el = '<a onclick="return vkopt.face.show_rev_comments(this);" class="replies_next replies_next_main replies_prev" data-post="' + post[1] + '"data-offset="0" data-count="3">' + IDL('showLastComments') + '</a>';
-         //parentMore.replaceChild(se(el), more);
-         parentMore.appendChild(se(el));
-      }
-   },
-   show_rev_comments: function(el){
-      var post = domData(el, 'post')
-      var post_item = post.split('_');
-      dApi.call('wall.getComments',{ owner_id: post_item[0], post_id: post_item[1], count: 1, v:'5.92'}, function(res) {
-         if(res){
-            res = res.response;
-            domData(el, 'offset', res.current_level_count-3);
-            el.setAttribute('onclick', 'return wall.showNextReplies(this, \'' + post +'\', event);');
-            return wall.showNextReplies(el, post);
+   deconnect: function(){
+      if (window._message_boxes && vkopt.settings.get('hide_connect_box')) each(_message_boxes, function(i, mb){
+         if (mb && mb.getOptions && (mb.getOptions() || {}).containerClass == "vk_connect_policy") {
+            mb.setOptions({onHideAttempt: false, preventHideLastWithCheck: false});
+            mb.hide();
          }
       });
    },
@@ -8883,7 +10263,7 @@ vkopt['face'] =  {
       if (!vkopt.settings.get('invert_btn'))
          return;
       var ref = ge('top_support_link');
-      var item = se('<a class="top_profile_mrow" id="top_invert_link" href="#" onclick="return vkopt.settings.set(\'invert\', !vkopt.settings.get(\'invert\'));">Night mode</a>');
+      var item = se('<a class="top_profile_mrow" id="top_vkopt_settings_link" href="/settings?act=vkopt" onclick="return vkopt.settings.show(this, true);">  <div class="menu_item_icon"><svg fill="none" height="20" viewBox="0 0 20 20" width="20" xmlns="http://www.w3.org/2000/svg"><path d="M10.6 2c.98.03 1.63.58 1.96 1.6l.06.18.04.15.06.2.04.13.03.01.06-.02.1-.04.13-.06c1.16-.53 2.05-.43 2.78.36l.1.12.67.83c.6.8.58 1.63 0 2.54l-.1.15-.1.14-.12.16-.05.1-.03.04v.02l.08.05.1.06.13.07c1.13.58 1.6 1.35 1.42 2.4l-.03.16-.2.87c-.13.56-.23.82-.63 1.19-.39.35-.83.5-1.42.55h-.18l-.16.01-.2.01-.15.02.01.12.01.08.03.14c.26 1.25-.03 2.1-.97 2.62l-.14.08-.96.47c-.9.4-1.72.2-2.48-.58l-.12-.13-.11-.13-.14-.15-.08-.08-.04-.04-.07.08-.09.08-.1.11c-.78.93-1.6 1.27-2.6.88L7 17.49l-.86-.42-.26-.13c-.39-.22-.6-.42-.82-.87a2.38 2.38 0 01-.13-1.54l.03-.19.04-.2L5 14 4.93 14l-.12-.01h-.15c-1.27-.03-2.03-.51-2.33-1.55l-.04-.15-.24-1.04c-.2-.97.2-1.72 1.11-2.28l.16-.1.15-.07.17-.1.13-.08v-.02l-.05-.08-.06-.1-.09-.12c-.76-1.02-.85-1.92-.22-2.8l.1-.12.67-.83c.64-.75 1.47-.9 2.48-.52l.17.07.15.06.18.08.11.04.03-.01.03-.08.04-.11.03-.14c.3-1.17.9-1.83 1.96-1.92L9.46 2zm-.05 1.47h-1.1l-.1.01c-.24.03-.4.16-.54.68l-.04.13-.04.17c-.09.29-.22.61-.39.93a4.8 4.8 0 00-.94.46 5.28 5.28 0 01-.95-.29l-.28-.13c-.2-.08-.36-.13-.48-.14h-.07a.45.45 0 00-.33.16l-.06.06-.64.8-.08.1c-.15.21-.17.4.16.88l.18.25c.18.26.35.57.5.9-.11.32-.19.65-.23.99a5.3 5.3 0 01-.83.6l-.28.14c-.5.28-.57.46-.53.72l.01.06.23 1 .04.13c.07.25.21.39.79.41l.32.02c.3.01.65.07 1 .16.18.29.4.55.63.8.02.43-.02.85-.1 1.18-.16.78 0 .9.32 1.06l.92.45c.1.05.19.07.28.07h.05c.15-.02.32-.13.55-.4l.21-.24c.21-.23.48-.47.78-.68l.24.01h.5l.24-.02c.3.22.57.46.78.69l.21.24c.27.3.44.4.6.4h.06c.05 0 .1-.02.14-.04l.08-.03.92-.45.12-.06c.24-.14.34-.32.2-1a5.07 5.07 0 01-.1-1.18c.24-.25.45-.51.64-.8.34-.1.7-.15 1-.16l.31-.02c.67-.03.75-.2.83-.54l.22-.93c.07-.33.07-.53-.5-.85l-.29-.15a5.26 5.26 0 01-.83-.59 4.87 4.87 0 00-.22-.98c.14-.34.32-.65.49-.9l.19-.26c.33-.48.3-.67.16-.88l-.04-.06-.65-.8c-.11-.13-.2-.23-.37-.26h-.06c-.13 0-.3.04-.54.14l-.3.13c-.27.11-.6.22-.94.28-.3-.18-.61-.33-.94-.45-.16-.3-.29-.62-.37-.9l-.1-.33c-.15-.56-.32-.66-.58-.68zM10 6.9a3.11 3.11 0 110 6.23 3.11 3.11 0 010-6.23zm0 1.48a1.64 1.64 0 100 3.27 1.64 1.64 0 000-3.27z" fill="currentColor"></path></svg></div><span>VKOpt Reloaded</span></a>');
       if (ref && !ge('top_invert_link')){
          ref.parentNode.insertBefore(item, ref);
       }
@@ -8926,7 +10306,7 @@ vkopt['face'] =  {
       if (status!=null){
          show_status(status);
       } else {
-         dApi.call("getProfiles",{ uid: remixmid(), fields:'online'},function(res) {
+         dApi.call("users.get",{ user_ids: remixmid(), fields:'online'},function(res) {
             if (res.response){
                var p=res.response[0];
                var st={
@@ -8943,9 +10323,18 @@ vkopt['face'] =  {
        });
       }
    },
+   side_bar_holder: function(t){
+      if (!vkopt.settings.get('hold_menu')) return;
+      var self = this.this_obj;
+      var dh = window.clientHeight() - self.menuEle.clientHeight;
+      self.firstScrollDown &&
+      bodyNode.getBoundingClientRect().bottom - window.clientHeight() > 0 &&
+      self.menuEle.getBoundingClientRect().bottom < window.clientHeight() &&
+      self.setPositionTop(t - self.menuEle.clientHeight + window.clientHeight() - Math.max(0,dh));
+   },
    shift_page: {
       btn: function(){
-         if (vkopt.settings.get('shift_page') && !geByClass('vk_page_shift_left')[0]){
+         if (vkopt.settings.get('shift_page') && ge('top_nav') && !geByClass('vk_page_shift_left')[0]){
             ge('top_nav').insertBefore(se('<a class="vk_page_shift_left head_nav_item fl_l" onclick="return vkopt.face.shift_page.shift(-1);"></a>'), ge('top_nav').firstChild);
             ge('top_nav').insertBefore(se('<a class="vk_page_shift_right head_nav_item fl_r" onclick="return vkopt.face.shift_page.shift(1);"></a>'),geByClass('fl_r', ge('top_nav'))[0]);
          }
@@ -8998,7 +10387,8 @@ vkopt['profile'] = {
          }
       },
       Extra: {
-         zodiak_ophiuchus:{}
+         zodiak_ophiuchus:{},
+         nickname_field:{ default_value:true }
       }
    },
 
@@ -9095,7 +10485,7 @@ vkopt['profile'] = {
       var store_key = 'user_groups_' + vk.id; // чтоб при входе на другой аккаунт не подсвечивались группы предыдущего.
       var stored_list = localStorage[store_key];
       if (!stored_list || update) {
-         dApi.call("groups.get",{ user_id: vk.id, extended: '1', filter: 'groups,publics,events', v: '5.59'},function(r) {
+         dApi.call("groups.get",{ user_id: vk.id, extended: '1', filter: 'groups,publics,events', v: '5.131'},function(r) {
             if (r.error) return;
             var groups = r.response.items;
             var cnt = groups.length;
@@ -9213,7 +10603,7 @@ vkopt['profile'] = {
                pv_sz[el.type+'_'] = [el.url,el.width,el.height];
                pv_sz[el.type+'_src'] = el.url;
          })
-         stManager.add(["photoview.js", "photoview.css"],function(){
+         stManager.add([jsc("web/photoview.js"), "photoview.css"],function(){
             extend(cur, {
                pvCancelLoad: function() {},
                pvData: cur.pvData || {},
@@ -9274,9 +10664,16 @@ vkopt['profile'] = {
       if (a && a.tt) a.tt.hide();
       addClass(_el,'fl_r');
       vkopt.profile.find_age(uid,function(age){
-         var txt=age?langNumeric(age, vk_lang["vk_year"]):'N/A';
-         removeClass(_el,'fl_r');
-         _el.innerHTML=txt;
+         if (age){
+            removeClass(_el,'fl_r');
+            _el.innerHTML=langNumeric(age, vk_lang["vk_year"]);
+         } else {
+            var nel = se(vk_lib.tpl_process(vkopt.profile.tpls['calc_age_el'], {
+               oid: uid,
+               year_text: langNumeric('?', vk_lang["vk_year"])
+            }));
+            _el.parentNode.replaceChild(nel, _el);
+         }
       },{el:el,width:50});
       return false;
    },
@@ -9328,7 +10725,7 @@ vkopt['profile'] = {
       dApi.call('friends.get',{
             user_id: target_uid,
             fields: 'first_name',
-            count: 20, //надеемся, что среди первых 20 будет хоть один незаблокированный акк
+            count: 100, //надеемся, что среди первых 100 будет хоть один незаблокированный акк
             v:'5.53'
          }, function(r){
             if (!r.response || !r.response.count){
@@ -9336,26 +10733,40 @@ vkopt['profile'] = {
                if (!ops.el) box.hide();
                return;
             }
-            var fid = 0;
+            var fids = [];
             // игнорим DELETED друзей, т.к невозможно использовать их список друзей
             for (var i in r.response.items)
                if (!r.response.items[i].deactivated){
-                  fid = r.response.items[i].id;
-                  break;
+                  fids.push(r.response.items[i].id);
                }
+            // рендомно выбираем друга, через которого будет искать возраст
+            var fid = fids[Math.floor(Math.random()*fids.length)];
             vkopt.log('fid',fid);
             scan(fid);
       });
    },
    editor: {
       middle_name_field: function(){
+         if (!vkopt.settings.get('nickname_field')) return;
          if (!ge('pedit_middle_name')){
             var p=ge('pedit_maiden_row');
             if (!p) return;
             var field = se(vk_lib.tpl_process(vkopt.profile.tpls['middle_name_field'], {}));
             p.parentNode.insertBefore(field, p);
          }
+      },
+      middle_name_req:function(url, q, options) {
+         if (!vkopt.settings.get('nickname_field')) return;
+         if (url === 'al_profileEdit.php' && q.act=="a_save_general") {
+            if (q.nickname){
+               q.nick_name = q.nickname;
+               delete q.nickname
+            }
+         }
       }
+   },
+   onRequestQuery: function(url, q, options) {
+      vkopt.profile.editor.middle_name_req(url, q, options);
    },
    moveAudio: function(flag) {
       var audios = document.getElementById("profile_audios");
@@ -9395,13 +10806,13 @@ vkopt['extra_online'] = {
    onLocation: function(){
       if (cur.module == "profile"){
          vkopt.extra_online.update_online_info();
-         cur.onPeerStatusChanged && Inj.End('cur.onPeerStatusChanged', vkopt.extra_online.update_online_info);
+         cur.onPeerStatusChanged && Inj.End('cur.onPeerStatusChanged', debounce(vkopt.extra_online.update_online_info,600));
       }
    },
    update_online_info: function(){
-      var code = 'var clients=["","m.vk.com","iPhone","iPad","Android","Windows Phone","Windows 10","vk.com","VK Mobile"];var u = API.users.get({user_ids:"%UID",fields:"online,last_seen"})[0];if (u.online_app){u.app_title=API.apps.get({app_id:u.online_app}).items[0].title;}if(u.last_seen)u.last_seen.platform_title=clients[u.last_seen.platform];return u;';
+      var code = 'var clients=["m.vk.com","iPhone","iPad","Android","Windows Phone","Windows 10","vk.com","VK Mobile"];var u = API.users.get({user_ids:"%UID",fields:"online,last_seen"})[0];if (u.online_app){u.app_title=API.apps.get({app_id:u.online_app}).items[0].title;}if(u.last_seen)u.last_seen.platform_title=clients[u.last_seen.platform-1];return u;';
       code = code.replace(/%UID/g,cur.oid);
-      dApi.call('execute',{code: code, v:'5.75'},function(r,info){
+      dApi.call('execute',{code: code, v:'5.131'},function(r,info){
          re(geByClass1('vk_extra_online_info'));
          var extra = null;
          if (info.online_app)
@@ -9410,11 +10821,8 @@ vkopt['extra_online'] = {
             extra = se('<span class="vk_extra_online_info" title="'+(new Date(info.last_seen.time*1000)).format('HH:MM dd.mm.yyyy')+'">('+info.last_seen.platform_title+')</span>');
 
          var p = geByClass1('profile_online');
-         if (p && hasClass(p, 'is_online'))
-            p = geByClass1('profile_online_lv');
-         else
-            p = geByClass1('profile_time_lv');
 
+         if (p) p = geByClass1('profile_online_lv') || geByClass1('profile_time_lv');
          if (p){
             if (p.childNodes.length < 1 && !info.online && info.last_seen) // no last seen info
                p.innerHTML = (new Date(info.last_seen.time*1000)).format('HH:MM dd.mm.yyyy');
@@ -9426,6 +10834,11 @@ vkopt['extra_online'] = {
 }
 
 vkopt['groups'] = {
+   onSettings:{
+      Extra:{
+         load_live_covers:{default_value:true}
+      }
+   },
    tpls:null,
    css: function(){
       return vk_lib.get_block_comments(function(){
@@ -9480,6 +10893,23 @@ vkopt['groups'] = {
          .vk_wiki_list_table i.vk_edit_icon:hover {
             opacity:1;
          }
+         .gr_live_covers {
+            position: absolute;
+            padding: 9px;
+            background: rgba(31,31,31,.6);
+            border-radius: 0 3px 3px 0;
+            float: right;
+            cursor: pointer;
+            margin-top: 15px;
+         }
+         .gr_live_covers:before {
+            content: '';
+            display: block;
+            width: 19px;
+            height: 19px;
+            background: url("data:image/svg+xml,%3C%3Fxml version='1.0' encoding='iso-8859-1'%3F%3E%3Csvg version='1.1' id='svg_1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' fill='%23fff' viewBox='0 0 469.333 469.333' style='enable-background:new 0 0 469.333 469.333;' xml:space='preserve'%3E%3Cg%3E%3Cg%3E%3Cg%3E%3Cpolygon points='319.253,198.08 260.587,273.6 218.667,223.253 160,298.667 394.667,298.667 '/%3E%3Cpath d='M42.667,85.333H0v341.333c0,23.573,19.093,42.667,42.667,42.667H384v-42.667H42.667V85.333z'/%3E%3Cpath d='M426.667,0H128c-23.573,0-42.667,19.093-42.667,42.667v298.667C85.333,364.907,104.427,384,128,384h298.667 c23.573,0,42.667-19.093,42.667-42.667V42.667C469.333,19.093,450.24,0,426.667,0z M426.667,341.333H128V42.667h298.667V341.333z '/%3E%3C/g%3E%3C/g%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3Cg%3E%3C/g%3E%3C/svg%3E") 50% no-repeat;
+            opacity: 0.6;
+		 }
          */
       }).css
    },
@@ -9547,8 +10977,12 @@ vkopt['groups'] = {
       }
 
       // На странице группы добавляем кнопку
-      if (ge('group') || ge('public'))
+      if (ge('group') || ge('public')){
          vkopt.groups.actions_items();
+
+         if(vkopt.settings.get('load_live_covers'))
+            vkopt.groups.live_covers();
+      }
    },
    onGroupActionItems: function(oid, gid){
       if (ge('vk_wiki_links'))
@@ -9608,6 +11042,29 @@ vkopt['groups'] = {
       if (!wrap) return false;
       wrap.appendChild(btn);
       return true;
+   },
+   live_covers: function (){
+      dApi.call('groups.getById',{group_id: -cur.oid, fields: 'live_covers', v: '5.103'},function(r,res){
+         if(!res || !res[0].live_covers.story_ids) return;
+         var getCovers = function(cb){
+            var id = res[0].live_covers.story_ids.shift();
+            ajax.post("al_stories.php", {
+               act: "get_list",
+               list: id,
+               story_raw: id
+            }, {
+               onDone(e) {
+                  e[0].items[0].can_comment = false;
+                  (cur['stories_list_group_live_covers']) ? cur.stories_list_group_live_covers[0].items.push(e[0].items[0]) : cur.stories_list_group_live_covers = e;
+                  (!res[0].live_covers.story_ids[0]) ? cb() : getCovers(cb);
+               }
+            });
+         };
+         getCovers(function(){
+            var el = se('<div class="gr_live_covers" onclick="showStory(\'' + (-cur.oid) + '/group_live_covers\', { fromEl: this}); return false;"><div>');
+            (geByClass1('page_cover')) ? geByClass1('page_cover').appendChild(el) : ge('page_avatar').insertBefore(el, ge('page_avatar').firstChild);
+         });
+      });
    },
    wiki_list:{
       owner_pages_btn:function(){
@@ -9964,7 +11421,7 @@ vkopt['wall'] = {
       }
    },
    processNode: function(node, params) {
-      var els=geByClass('post_media_voting',node);
+      var els=geByClass('post_media_voting',node).concat(geByClass('im_msg_media_poll', node));
       for (var i=0; i<els.length; i++){
          vkopt.wall.poll_btns(els[i]);
       }
@@ -10044,7 +11501,7 @@ vkopt['wall'] = {
 
 
       var code = 'return {posts: API.wall.getById({posts:"'+full_post_id+'", copy_history_depth: 2}), poll: API.polls.getById({owner_id:'+owner_id+',poll_id:'+poll_id+'})};'
-      if (!post_id && owner_id && poll_id){
+      if ((!post_id || post_id == "null") && owner_id && poll_id){
          dApi.call('polls.getById',{owner_id:owner_id, poll_id:poll_id, v: '5.59'},function(r){
             var data=r.response;
             view(data);
@@ -10127,7 +11584,7 @@ vkopt['friends'] = {
       if (
          window.cur && cur.userLists &&
          vkopt.settings.get('accept_more_cats') &&
-         url == '/al_friends.php' && q.act == 'add' &&
+         url == 'al_friends.php' && q.act == 'add' &&
          q.request == 1 && q.select_list == 1 && answer[0]
       ){
          answer[0] = vkopt.friends.accept_more_cats(answer[0], q.mid);
@@ -10198,6 +11655,28 @@ vkopt['test_module'] =  {
          * /
       });
    },
+   stuff: function(){
+      TopNotifier.showTooltip('Hello!', Math.random());
+
+      var icon_types="live|vkpay|copy|mail_mention|interesting|friends|suggested_post_published|like|podcast|voting|comment|followers|invite|import|payment|reply|story_reply|tag|publish|private_post|gift|birthday_gift|app|mail_mention_unify|event_unify|message_request|comment_unify|discussions|mention|money|money_decline|declined|money_request|ads_ok|approved|ads_fail".split('|');
+      Notifier.pushEvent(JSON.stringify({
+            version: curNotifier.version,
+            type: 'vkopt',
+            title: 'Notify Title',
+            author_photo: "/images/camera_50.png",
+            author_link: "/vkopt_club",
+            text: "Notify Content Text",
+            add_photo: "/images/deactivated_100.png",
+            link: "", // ???
+            onclick: "", // клик по уведомлению в любом месте
+            add: "",
+            id: 'vk_'+Math.round(Math.random()*2e10),
+            author_id: "", // вроде бы для открытия чата
+            top_count: 0, // счётчик уведомлений в шапке
+            _eval: '',
+            icon_type: icon_types[Math.ceil(Math.random()*icon_types.length)]
+      }))
+   }
    onAudioRowMenuItems: function(info){
        console.log(arguments);
       return [
@@ -10448,6 +11927,7 @@ vkopt['im_form'] = {
       }
       if (option_id == 'im_store_h') {
          vkopt.im_form.debounce(function() {
+            if (!geByClass1('im-chat-input--text')) return;
             if (val) {
                var h = vkopt.settings.get('im_form_h');
                //if (h) vkopt.set_css('.vk_im_store_h .im-chat-input--text{height:'+h+';}','im_form_h');
@@ -10601,6 +12081,14 @@ vkopt['audio_clean_titles'] = {
 				title: 'seAudioUntrashTitle'
 			}}
 	},
+   remove_trash:function(s){
+      s=vkRemoveTrash(s,'%'); // удаление символов не являющихся буквами/иероглифами/и т.д
+      // Удаление лишних дефисов в названиях и приведение их к одному виду
+      s=s.replace(/\[\s*\]|\(\s*\)|\{\s*\}/g,'');
+      s=s.replace(/[\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+/g,'\u2013').replace(/\u2013\s*\u2013/g,'\u2013');
+      s=s.replace(/[\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+$/,'');// ^[\s\u1806\u2010\u2011\u2012\u2013\u2014\u2015\u2212\u2043\u02D7\u2796\-]+
+      return s;
+   },
 	processNode: function (node, params) {
 		if (vkopt.settings.get('audio_clean_titles')){ // clean titles
 			var nodes=domQuery('.audio_row__performer_title, .audio_title_wrap', node);
@@ -10608,7 +12096,7 @@ vkopt['audio_clean_titles'] = {
 				FindAndProcessTextNodes(nodes[i],function(mainNode,childItem){
 					var el = mainNode.childNodes[childItem];
 					if (el.nodeValue && !/^[\u2013\s]+$/.test(el.nodeValue)){
-						el.nodeValue=vkopt.audio.remove_trash(el.nodeValue);
+						el.nodeValue=vkopt.audio_clean_titles.remove_trash(el.nodeValue);
 					}
 					return childItem;
 				});
@@ -10679,6 +12167,9 @@ vkopt['vk_dislike'] = {
       console.log('vk_dk status :' + (vkopt.vk_dislike.is_enabled()?'1':'0'));
       if (!vkopt.vk_dislike.is_enabled()) return;
       vkopt.vk_dislike.storage=new vk_tag_api('dislike','http://vk.dislike.server/',3429306);
+
+      vkopt.vk_dislike.get_dislikes_debounced = debounce(vkopt.vk_dislike.get_dislikes, 700);
+      addEvent(document, 'mouseover', vkopt.vk_dislike.mouseover);
    },
    auth:function(callback){
       var auth_data=localStorage[vkopt.vk_dislike.ls_val] || '{}';
@@ -10722,7 +12213,7 @@ vkopt['vk_dislike'] = {
          var params={
             //oauth:1,
             //method:'users.get',
-            uids:ids.join(','),
+            user_ids:ids.join(','),
             fields:'first_name,last_name,photo_100'
          };
          if (ids.length>0)
@@ -10828,6 +12319,34 @@ vkopt['vk_dislike'] = {
          vkopt.vk_dislike.timeout=setTimeout(function(){vkopt.vk_dislike.load_dislikes_info();},300);
       }
    },
+   mouseover: function(e){
+      var load = vkopt.vk_dislike.get_dislikes_debounced;
+      var pathLength = function (el, p, limit){
+         var i = 0;
+         while ((el = el.parentNode) && el != p)
+            i++;
+         return i;
+      }
+      var getDislikeId = function (parent){
+         var el = domQuery1('*[dislike_id]', parent);
+         return el ? [ el.getAttribute('dislike_id') ] : [];
+      }
+
+      var el = e.target;
+
+      var rx = /dislike_wrap|mv_dislike_wrap|wk_dislike_wrap|pv_dislike_wrap|post_dislike|has_dislike/
+      if (rx.test(el.className || '')) {
+         load(getDislikeId(el.parentNode));
+      }
+
+      if (el.parentNode && rx.test(el.parentNode.className || '')){
+         load(getDislikeId(el.parentNode.parentNode));
+      }
+      var els = geByClass('has_dislike', el);
+      if (els.length == 1 && pathLength(els[0], el) < 4){
+         load(getDislikeId(el));
+      }
+   },
    in_cache:function(obj_id){
       if (vkopt.vk_dislike.cache[obj_id]){
          var ts=Math.round(new Date().getTime());
@@ -10917,7 +12436,7 @@ vkopt['vk_dislike'] = {
             </button>');
          case 'photo':
             return se('\
-            <div class="pv_like _like_wrap '+(my_dislike?' '+'pv_disliked':'')+' no_dislikes" dislike_id="'+obj_id+'" onclick="vkopt.vk_dislike.dislike(this.getAttribute(\'dislike_id\')); return false;" onmouseover="vkopt.vk_dislike.dislike_over(this.getAttribute(\'dislike_id\'));" id="post_dislike'+obj_id+'">\
+            <div class="pv_like _like_wrap '+(my_dislike?' '+'pv_disliked':'')+' pv_dislike_wrap no_dislikes" dislike_id="'+obj_id+'" onclick="vkopt.vk_dislike.dislike(this.getAttribute(\'dislike_id\')); return false;" onmouseover="vkopt.vk_dislike.dislike_over(this.getAttribute(\'dislike_id\'));" id="post_dislike'+obj_id+'">\
                <i class="pv_dislike_icon no_dislikes" id="dislike_icon'+obj_id+'"></i>\
                <span class="pv_like_link" id="dislike_link'+obj_id+'">'+IDL('dislike')+'</span>\
                <span class="pv_like_count fl_l" id="dislike_count'+obj_id+'">'+(count|| '')+'</span>\
@@ -10932,7 +12451,7 @@ vkopt['vk_dislike'] = {
                </a>');
             }
             return se('\
-            <a href="#" dislike_id="'+obj_id+'" class="like_btn post_dislike '+(my_dislike?' '+'pv_disliked':'')+' no_dislikes" onclick="vkopt.vk_dislike.dislike(this.getAttribute(\'dislike_id\')); return false;" onmouseover="vkopt.vk_dislike.dislike_over(this.getAttribute(\'dislike_id\'));" id="post_dislike'+obj_id+'">\
+            <a href="#" dislike_id="'+obj_id+'" class="PostBottomAction like_btn post_dislike '+(my_dislike?' '+'pv_disliked':'')+' no_dislikes" onclick="vkopt.vk_dislike.dislike(this.getAttribute(\'dislike_id\')); return false;" onmouseover="vkopt.vk_dislike.dislike_over(this.getAttribute(\'dislike_id\'));" id="post_dislike'+obj_id+'">\
                <i class="post_dislike_icon" id="dislike_icon'+obj_id+'"></i>\
                <span class="post_like_link" id="dislike_link'+obj_id+'">'+IDL('dislike')+'</span>\
                <span class="post_like_count fl_l" id="dislike_count'+obj_id+'">'+(count|| '')+'</span>\
@@ -10960,6 +12479,7 @@ vkopt['vk_dislike'] = {
       var attrs=['onclick','onmouseover','onmouseout'];
       var types=vkopt.vk_dislike.types;
 
+      if (!el) return;
       if (hasClass(el,'has_dislike')) return;
       addClass(el,'has_dislike');
 
@@ -10984,11 +12504,12 @@ vkopt['vk_dislike'] = {
                if (ids[i]=='post_dislike') _el.setAttribute('dislike_id',dislike_id);
                if (_el) _el.id=ids[i]+dislike_id;
            }
-           vkopt.vk_dislike.get_dislikes([dislike_id]);
+           //vkopt.vk_dislike.get_dislikes([dislike_id]);
          },400)
       } else {
          //obj_id=(geByTag('i',el)[0] || {}).id;
-         obj_id = el.outerHTML.split('(this, \'')[1].split('\'')[0];
+         obj_id = (el.outerHTML.split('(this, \'')[1] || "").split('\'')[0];
+         if (!obj_id) obj_id = ((el.querySelector("[data-reaction-target-object]") || {}).dataset || {}).reactionTargetObject;
          if (!obj_id) return;
          //obj_id=obj_id.split('like_icon')[1];
          vkopt.vk_dislike.obj_ids.push(obj_id);
@@ -11033,7 +12554,8 @@ vkopt['vk_dislike'] = {
 
       els=geByClass('like_btns',node);
       for (var i=0; i<els.length;i++){
-         vkopt.vk_dislike.add(geByClass1('like',els[i]));
+         // vkopt.vk_dislike.add(geByClass1('like',els[i]));
+         vkopt.vk_dislike.add(els[i].querySelector('.like, .PostButtonReactionsContainer'));
       }
 
       els=geByClass('fw_like_wrap',node);
@@ -11064,8 +12586,8 @@ vkopt['vk_dislike'] = {
       /*if (node.innerHTML.indexOf('mv_like_count')>-1 && ge('mv_like_count'))
          vkopt.vk_dislike.add(ge('mv_like_count').parentNode.parentNode,'video');*/
 
-      if (vkopt.vk_dislike.obj_ids.length>0)
-         vkopt.vk_dislike.get_dislikes(vkopt.vk_dislike.obj_ids);
+      // if (vkopt.vk_dislike.obj_ids.length>0)
+      //    vkopt.vk_dislike.get_dislikes(vkopt.vk_dislike.obj_ids);
    },
    dislike:function(obj_id){
       var pid=obj_id.match(/wall(-?\d+_\d+)/);
@@ -11154,7 +12676,7 @@ vkopt['vk_dislike'] = {
          var users=info.users || [];
          for (var i=0; i<users.length;i++){
             html+=item_tpl.replace(/%NAME%/g,users[i].first_name+' '+users[i].last_name)
-                          .replace(/%UID%/g,users[i].uid)
+                          .replace(/%UID%/g,users[i].id)
                           .replace(/%AVA%/g,users[i].photo_100);
          }
          val(ge('dislike_table_'+post), html);
@@ -11311,7 +12833,7 @@ vkopt['vk_dislike'] = {
          var users=info.users;
          for (var i=0; i<users.length;i++){
             html+=item_tpl.replace(/%NAME%/g,users[i].first_name)
-                          .replace(/%UID%/g,users[i].uid)
+                          .replace(/%UID%/g,users[i].id)
                           .replace(/%AVA%/g,users[i].photo_100);
             html+=((i+1)%IN_ROW==0)?'</tr><tr>':'';
          }
@@ -12390,8 +13912,8 @@ vkopt['attachments_and_link'] = {
     template: function () {
         return vk_lib.get_block_comments(function () {/*menu_button:
          <li>
-         <div class="ui_tab my_link_repost" onclick="vkopt['{vals.module_id}'].clickMenu(cur.peer)">
-         {lng.LinksAndRepost}
+         <div class="ui_tab my_link_repost" onclick="vkopt['{vals.module_id}'].clickMenu(cur.peer)" title="{lng.LinksAndRepost}">
+         {lng.Repost}
          </div>
          </li>
          */
