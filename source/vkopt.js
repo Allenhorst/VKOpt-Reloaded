@@ -3187,8 +3187,11 @@ vkopt['photoview'] =  {
             <div class="pv_counter vk_ph_copy_search_label pv_more_act_item">{lng.ImgCopySeacrh}</div>
             <div class="vk_ph_copy_search_links">
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.google.com/searchbyimage?image_url={vals.qsrc}">Google</a>
-            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="http://www.tineye.com/search?url={vals.qsrc}">TinEye</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.tineye.com/search?url={vals.qsrc}">TinEye</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://yandex.ru/images/search?rpt=imageview&url={vals.qsrc}">Yandex</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://www.bing.com/images/searchbyimage?cbir=sbi&imgurl={vals.src}">Bing</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://karmadecay.com/{vals.src}">KarmaDecay</a>
+            <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://imgops.com/{vals.src}">ImgOps</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="https://iqdb.org/?url={vals.qsrc}">IQDB</a>
             <a target="_blank" class="pv_more_act_item fl_l vk_ph_copy_search" href="/feed?section=photos_search&q=copy%3Aphoto{vals.photo_id}">VK</a>
             <div class="clear"></div>
